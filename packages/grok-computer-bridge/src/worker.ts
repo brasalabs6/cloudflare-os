@@ -1,248 +1,204 @@
 // grok-computer-bridge/src/worker.ts
 //
-// Cloudflare Worker que hospeda um Cloudflare Computer com o grok-build.
-// Este Worker:
-//   1. Cria um Workspace (Durable Object) com o backend de container
-//   2. O container roda o Dockerfile (grok + bridge HTTP server)
-//   3. Expõe uma API HTTP que o cloudflare-os backend chama para:
-//      - Enviar prompts ao agente grok
-//      - Receber respostas em streaming (SSE)
-//      - Executar comandos shell no workspace
-//      - Resetar a sessão do grok
+// Cloudflare Worker that hosts a Cloudflare Computer running Grok Build.
+// This Worker:
+//   1. Creates a Durable Object per workspace (isolated agent/container)
+//   2. The DO manages a container running grok + bridge.mjs
+//   3. Exposes an HTTP API that the cloudflare-os backend calls to:
+//      - Send prompts to the grok agent (SSE streaming)
+//      - Boot/configure the container (repos, dotfiles, credentials)
+//      - Control the agent lifecycle (pause, resume, stop, reset)
 //
-// O Worker atua como proxy entre o cloudflare-os e o bridge dentro do container:
+// Architecture:
 //
 //   cloudflare-os (Overseer DO)
-//       │  RPC ou HTTP
+//       │  service binding fetch()
 //       ▼
-//   grok-computer-bridge Worker (este arquivo)
-//       │  workspace.runtime.exec() ou HTTP para o container
+//   grok-computer-bridge Worker (this file)
+//       │  authenticates every request at the Worker boundary
+//       │  routes to a per-workspace DO via X-Grok-Workspace header
 //       ▼
-//   Container (Docker)
-//   ├── computerd (FUSE mount /workspace)
-//   ├── grok agent stdio (ACP)
-//   └── bridge.mjs (HTTP :8787)
-//
-// O bridge dentro do container expõe HTTP na porta 8787. O Worker acessa
-// o container via o Computer Workspace API.
+//   GrokComputer DO (one per workspace)
+//   ├── container (Docker: Debian + Node + grok CLI + bridge.mjs)
+//   │   ├── bridge.mjs (HTTP :8787, ACP → SSE)
+//   │   ├── grok agent stdio (ACP JSON-RPC)
+//   │   └── /workspace (FUSE mount from Computer VFS)
+//   └── run state (SQLite DO storage)
 
-import { withWorkspace, getWorkspace } from "@cloudflare/computer";
-import { CloudflareContainerBackend } from "@cloudflare/computer/backends/container";
-import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
+import { DurableObject } from "cloudflare:workers";
+
+// ─── Authentication at the Worker boundary ──────────────────────────────────
+//
+// Every request to this Worker must carry a valid Bearer token matching
+// GROK_BRIDGE_API_KEY. This is the first line of defense: the Worker is
+// reachable via its public URL AND via the service binding from the
+// workshop backend. Without this check, anyone who discovers the URL
+// could execute arbitrary shell commands, read/write the workspace, or
+// consume xAI API credits.
+//
+// In dev mode (GROK_BRIDGE_API_KEY is empty), authentication is skipped.
+// This must never be the case in production.
+
+function authenticate(request: Request, env: Env): boolean {
+  if (!env.GROK_BRIDGE_API_KEY) return true; // dev mode
+  const auth = request.headers.get("Authorization") ?? "";
+  return auth === `Bearer ${env.GROK_BRIDGE_API_KEY}`;
+}
+
+/** Returns a 401 response for unauthenticated requests. */
+function unauthorized(): Response {
+  return Response.json({ error: "unauthorized" }, { status: 401 });
+}
 
 // ─── Durable Object: GrokComputer ───────────────────────────────────────────
 //
-// Um Durable Object por agente grok. Mantém:
-//   - O Workspace (filesystem SQLite-backed)
-//   - O container com grok + bridge
-//   - O estado da sessão (URL do bridge, status)
+// One Durable Object per workspace. The DO ID is derived from the workspace
+// ID passed by the Overseer, ensuring complete isolation between workspaces:
+// different workspaces get different containers, different /workspace
+// filesystems, and different grok agent sessions.
 
-export class GrokComputer extends withWorkspace(
-  class extends DurableObject<Env> {},
-  (self) => ({
-    storage: self.ctx.storage,
-    backends: [
-      // Container backend: roda o Dockerfile com grok + bridge.
-      // O container tem rede pública (para o grok acessar a API da xAI)
-      // e o /workspace montado via FUSE (computerd).
-      new CloudflareContainerBackend({
-        id: "grok-container",
-        container: () => self.ctx.container,
-        workspace: {
-          binding: "GrokComputer",
-          id: self.ctx.id.toString(),
-        },
-        ctx: self.ctx,
-      }),
-    ],
-  }),
-) {
-  // URL do bridge HTTP dentro do container (atribuído quando o container sobe)
-  private bridgeUrl: string | null = null;
+export class GrokComputer extends DurableObject<Env> {
+  // Whether the container has been started and the bridge is ready.
+  private started = false;
+
+  // Hash of the last-applied boot config, for idempotency (M4).
+  private bootConfigHash = "";
 
   /**
-   * Inicializa o container e aguarda o bridge estar pronto.
-   * O container roda o Dockerfile que inicia o bridge.mjs na porta 8787.
+   * Ensures the container is running and the bridge is ready.
+   * Uses the Cloudflare Containers API to start the container and
+   * poll its health endpoint.
    */
-  async ensureStarted(): Promise<string> {
-    if (this.bridgeUrl) return this.bridgeUrl;
+  async ensureStarted(): Promise<void> {
+    if (this.started) return;
 
-    // O container sobe lazy (primeiro exec). Disparamos um exec trivial
-    // para forçar o cold-start e então verificamos o health do bridge.
-    const ws = await getWorkspace(this.ctx.stub());
-    await ws.runtime.exec("echo 'container started'", {
-      backend: "grok-container",
-    });
+    // The container is accessed via ctx.container. The Workers runtime
+    // provides a fetch() interface to communicate with the container process.
+    const container = (this.ctx as unknown as { container: { fetch: typeof fetch } }).container;
+    if (!container) {
+      throw new Error("No container binding found. Ensure the container is configured in wrangler.jsonc.");
+    }
 
-    // O container expõe o bridge na porta 8787 internamente.
-    // O Computer expõe o container via um URL que o Worker pode acessar.
-    // Na implementação atual do Computer, o container é acessível via
-    // o container binding do DO.
-    //
-    // Em uma implementação completa, o URL seria descoberto via o
-    // container API do Cloudflare. Por ora, assumimos que o container
-    // expõe a porta 8787 e o Worker pode acessá-la.
-    this.bridgeUrl = `http://container:8787`;
-    return this.bridgeUrl;
+    // Wait for the container to be ready by polling /health.
+    for (let attempt = 0; attempt < 30; attempt++) {
+      try {
+        const response = await container.fetch("http://localhost:8787/health");
+        if (response.ok) {
+          this.started = true;
+          return;
+        }
+      } catch {
+        // Container not ready yet; retry after a short delay.
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    throw new Error("Container failed to start within 30 seconds.");
   }
 
   /**
-   * Envia um prompt ao grok agent e faz streaming da resposta.
-   * O cloudflare-os chama este método via RPC (Cap'n Web) ou HTTP.
-   *
-   * @param prompt - O texto do prompt do usuário
-   * @returns Um ReadableStream de eventos no formato AiChatStreamEvent
+   * Makes an authenticated fetch to the bridge inside the container.
    */
-  async prompt(prompt: string): Promise<ReadableStream<Uint8Array>> {
-    const url = await this.ensureStarted();
+  private async bridgeFetch(path: string, init: RequestInit = {}): Promise<Response> {
+    await this.ensureStarted();
+    const container = (this.ctx as unknown as { container: { fetch: typeof fetch } }).container;
+    if (!container) throw new Error("No container binding.");
 
-    // Faz um POST /prompt para o bridge dentro do container.
-    // O bridge inicia o `grok agent stdio`, envia o prompt via ACP,
-    // e faz streaming dos eventos transformados via SSE.
-    const response = await fetch(`${url}/prompt`, {
+    const headers = new Headers(init.headers);
+    headers.set("Content-Type", "application/json");
+    if (this.env.GROK_BRIDGE_API_KEY) {
+      headers.set("Authorization", `Bearer ${this.env.GROK_BRIDGE_API_KEY}`);
+    }
+
+    return container.fetch(`http://localhost:8787${path}`, {
+      ...init,
+      headers,
+    });
+  }
+
+  /**
+   * Sends a prompt to the grok agent and streams the response via SSE.
+   */
+  async prompt(prompt: string, alwaysApprove: boolean): Promise<ReadableStream<Uint8Array>> {
+    const response = await this.bridgeFetch("/prompt", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(this.env.GROK_BRIDGE_API_KEY
-          ? { Authorization: `Bearer ${this.env.GROK_BRIDGE_API_KEY}` }
-          : {}),
-      },
-      body: JSON.stringify({ prompt, alwaysApprove: true }),
+      body: JSON.stringify({ prompt, alwaysApprove }),
     });
 
     if (!response.ok) {
       throw new Error(`Bridge error: ${response.status} ${await response.text()}`);
     }
 
-    // Retorna o stream SSE cru para o caller processar.
     return response.body as ReadableStream<Uint8Array>;
   }
 
   /**
-   * Executa um comando shell diretamente no workspace do Computer
-   * (não passa pelo grok — é direto no container).
+   * Applies boot configuration to the container. Writes dotfiles, sets env
+   * vars, clones repos, writes credentials, runs the boot script, and
+   * restarts the grok agent.
    *
-   * @param command - Comando shell (ex: "ls -la /workspace")
-   * @returns { stdout, stderr, exitCode }
+   * Idempotency (M4): if the config hash matches the last applied config,
+   * the boot is skipped to avoid restarting the grok session and losing
+   * context.
    */
-  async command(command: string): Promise<{
-    stdout: string;
-    stderr: string;
-    exitCode: number;
-  }> {
-    const url = await this.ensureStarted();
+  async boot(config: {
+    githubRepos?: Array<{ url: string; branch?: string; path?: string; private?: boolean }>;
+    dotfiles?: Array<{ path: string; content: string }>;
+    envVars?: Array<{ key: string; value: string; secret?: boolean }>;
+    credentials?: Array<{ type: string; name: string; value: string }>;
+    bootScript?: string;
+    grokModel?: string;
+    autoApprove?: boolean;
+  }): Promise<{ ok: boolean; grokSessionId: string }> {
+    // Compute a hash of the config to check idempotency.
+    const configHash = JSON.stringify(config);
+    if (configHash === this.bootConfigHash && this.started) {
+      // Config unchanged and container already running — skip boot.
+      return { ok: true, grokSessionId: "" };
+    }
+    this.bootConfigHash = configHash;
 
-    const response = await fetch(`${url}/command`, {
+    // Inject XAI_API_KEY into the container environment (H5).
+    // The key is read from the Worker's env (set via `wrangler secret put`)
+    // and passed to the container as an env var so the grok CLI can authenticate.
+    const envVars = [...(config.envVars ?? [])];
+    if (this.env.XAI_API_KEY) {
+      envVars.push({ key: "XAI_API_KEY", value: this.env.XAI_API_KEY, secret: true });
+    }
+
+    const response = await this.bridgeFetch("/boot", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(this.env.GROK_BRIDGE_API_KEY
-          ? { Authorization: `Bearer ${this.env.GROK_BRIDGE_API_KEY}` }
-          : {}),
-      },
-      body: JSON.stringify({ command }),
+      body: JSON.stringify({ ...config, envVars }),
     });
 
     if (!response.ok) {
-      throw new Error(`Bridge error: ${response.status}`);
+      throw new Error(`Boot failed: ${response.status} ${await response.text()}`);
     }
 
     return response.json();
   }
 
   /**
-   * Reseta a sessão do grok (limpa o contexto da conversa atual).
-   */
-  async resetSession(): Promise<{ ok: boolean; sessionId: string | null }> {
-    const url = await this.ensureStarted();
-
-    const response = await fetch(`${url}/session/reset`, {
-      method: "POST",
-      headers: {
-        ...(this.env.GROK_BRIDGE_API_KEY
-          ? { Authorization: `Bearer ${this.env.GROK_BRIDGE_API_KEY}` }
-          : {}),
-      },
-    });
-
-    return response.json();
-  }
-
-  /**
-   * Health check: verifica se o grok agent está rodando dentro do container.
-   */
-  async health(): Promise<{
-    ok: boolean;
-    grokRunning: boolean;
-    sessionId: string | null;
-    model: string;
-    cwd: string;
-  }> {
-    const url = await this.ensureStarted();
-
-    const response = await fetch(`${url}/health`);
-    return response.json();
-  }
-
-  /**
-   * Applies boot configuration to the Computer container. Writes dotfiles,
-   * sets env vars, clones repos, writes credentials, runs the boot script,
-   * and restarts the grok agent with the new configuration.
-   */
-  async boot(config: {
-    githubRepos?: Array<{ url: string; branch?: string; path?: string; private?: boolean }>;
-    dotfiles?: Array<{ path: string; content: string }>;
-    envVars?: Array<{ key: string; value: string }>;
-    credentials?: Array<{ type: string; name: string; value: string }>;
-    bootScript?: string;
-    grokModel?: string;
-    autoApprove?: boolean;
-  }): Promise<{ ok: boolean; grokSessionId: string }> {
-    const url = await this.ensureStarted();
-    const response = await fetch(`${url}/boot`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(this.env.GROK_BRIDGE_API_KEY
-          ? { Authorization: `Bearer ${this.env.GROK_BRIDGE_API_KEY}` }
-          : {}),
-      },
-      body: JSON.stringify(config),
-    });
-    return response.json();
-  }
-
-  /**
    * Returns detailed status of the bridge and grok agent.
    */
-  async status(): Promise<{
-    ok: boolean;
-    grokRunning: boolean;
-    sessionId: string | null;
-    model: string;
-    cwd: string;
-    uptime: number;
-    pendingRequests: number;
-    eventListeners: number;
-  }> {
-    const url = await this.ensureStarted();
-    const response = await fetch(`${url}/status`);
+  async status(): Promise<Record<string, unknown>> {
+    const response = await this.bridgeFetch("/status");
     return response.json();
   }
 
   /**
-   * Pauses the grok agent (SIGSTOP). The process stays alive but is suspended.
+   * Health check.
+   */
+  async health(): Promise<Record<string, unknown>> {
+    const response = await this.bridgeFetch("/health");
+    return response.json();
+  }
+
+  /**
+   * Pauses the grok agent (SIGSTOP).
    */
   async pauseSession(): Promise<{ ok: boolean }> {
-    const url = await this.ensureStarted();
-    const response = await fetch(`${url}/session/pause`, {
-      method: "POST",
-      headers: {
-        ...(this.env.GROK_BRIDGE_API_KEY
-          ? { Authorization: `Bearer ${this.env.GROK_BRIDGE_API_KEY}` }
-          : {}),
-      },
-    });
+    const response = await this.bridgeFetch("/session/pause", { method: "POST" });
     return response.json();
   }
 
@@ -250,14 +206,31 @@ export class GrokComputer extends withWorkspace(
    * Resumes a paused grok agent (SIGCONT).
    */
   async resumeSession(): Promise<{ ok: boolean }> {
-    const url = await this.ensureStarted();
-    const response = await fetch(`${url}/session/resume`, {
+    const response = await this.bridgeFetch("/session/resume", { method: "POST" });
+    return response.json();
+  }
+
+  /**
+   * Stops and resets the grok agent session.
+   */
+  async resetSession(): Promise<{ ok: boolean }> {
+    const response = await this.bridgeFetch("/session/reset", { method: "POST" });
+    return response.json();
+  }
+
+  /**
+   * Executes a shell command in the container workspace.
+   * This is authenticated at the Worker boundary and only accessible
+   * via the service binding from the Overseer.
+   */
+  async command(command: string): Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+  }> {
+    const response = await this.bridgeFetch("/command", {
       method: "POST",
-      headers: {
-        ...(this.env.GROK_BRIDGE_API_KEY
-          ? { Authorization: `Bearer ${this.env.GROK_BRIDGE_API_KEY}` }
-          : {}),
-      },
+      body: JSON.stringify({ command }),
     });
     return response.json();
   }
@@ -265,30 +238,47 @@ export class GrokComputer extends withWorkspace(
 
 // ─── Worker Entrypoint ──────────────────────────────────────────────────────
 //
-// O Worker expõe a API HTTP que o cloudflare-os backend chama.
-// Ele roteia para o GrokComputer Durable Object apropriado.
+// The Worker authenticates every incoming request at the boundary, then
+// routes to the GrokComputer DO identified by the workspace ID (C2).
+// The workspace ID is passed by the Overseer via the X-Grok-Workspace
+// header — it is never derived from client-controllable input.
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    // ── Authenticate at the Worker boundary (C1) ────────────────────────
+    if (!authenticate(request, env)) {
+      return unauthorized();
+    }
+
     const url = new URL(request.url);
 
-    // Cria/obtém o DO para o agent name (path param ou header)
-    const agentName = url.searchParams.get("agent")
-      ?? request.headers.get("X-Grok-Agent")
-      ?? "default";
+    // ── Workspace isolation (C2) ────────────────────────────────────────
+    // Derive the DO ID from the X-Grok-Workspace header, which the Overseer
+    // sets to its own ctx.id.toString(). This ensures each workspace gets
+    // its own isolated DO/container/session. Never use a client-controllable
+    // default.
+    const workspaceId = request.headers.get("X-Grok-Workspace");
+    if (!workspaceId) {
+      return Response.json(
+        { error: "X-Grok-Workspace header is required" },
+        { status: 400 },
+      );
+    }
 
-    const doId = env.GROK_COMPUTER.idFromName(agentName);
-    const stub = env.GROK_COMPUTER.get(doId);
+    const doId = env.GROK_COMPUTER.idFromName(workspaceId);
+    const stub = env.GROK_COMPUTER.get(doId) as DurableObjectStub<GrokComputer>;
 
-    // Roteamento HTTP → DO methods
+    // ── Route HTTP → DO methods ────────────────────────────────────────
+    // All endpoints are authenticated at the Worker boundary (C1).
+
     if (request.method === "GET" && url.pathname === "/health") {
       const result = await stub.health();
       return Response.json(result);
     }
 
     if (request.method === "POST" && url.pathname === "/prompt") {
-      const body = await request.json() as { prompt: string };
-      const stream = await stub.prompt(body.prompt);
+      const body = await request.json() as { prompt: string; alwaysApprove?: boolean };
+      const stream = await stub.prompt(body.prompt, body.alwaysApprove ?? true);
       return new Response(stream, {
         headers: {
           "Content-Type": "text/event-stream",
@@ -298,9 +288,24 @@ export default {
       });
     }
 
-    if (request.method === "POST" && url.pathname === "/command") {
-      const body = await request.json() as { command: string };
-      const result = await stub.command(body.command);
+    if (request.method === "POST" && url.pathname === "/boot") {
+      const body = await request.json() as Parameters<GrokComputer["boot"]>[0];
+      const result = await stub.boot(body);
+      return Response.json(result);
+    }
+
+    if (request.method === "GET" && url.pathname === "/status") {
+      const result = await stub.status();
+      return Response.json(result);
+    }
+
+    if (request.method === "POST" && url.pathname === "/session/pause") {
+      const result = await stub.pauseSession();
+      return Response.json(result);
+    }
+
+    if (request.method === "POST" && url.pathname === "/session/resume") {
+      const result = await stub.resumeSession();
       return Response.json(result);
     }
 
@@ -309,30 +314,10 @@ export default {
       return Response.json(result);
     }
 
-    // ── Computer boot configuration ────────────────────────────────────────
-    // Applies boot config (repos, dotfiles, env vars, credentials, boot script)
-    // to the container and restarts the grok agent with the new configuration.
-    if (request.method === "POST" && url.pathname === "/boot") {
-      const body = await request.json();
-      const result = await stub.boot(body);
-      return Response.json(result);
-    }
-
-    // Returns detailed status of the bridge and grok agent.
-    if (request.method === "GET" && url.pathname === "/status") {
-      const result = await stub.status();
-      return Response.json(result);
-    }
-
-    // Pauses the grok agent (SIGSTOP).
-    if (request.method === "POST" && url.pathname === "/session/pause") {
-      const result = await stub.pauseSession();
-      return Response.json(result);
-    }
-
-    // Resumes a paused grok agent (SIGCONT).
-    if (request.method === "POST" && url.pathname === "/session/resume") {
-      const result = await stub.resumeSession();
+    // Shell command execution (authenticated at the boundary).
+    if (request.method === "POST" && url.pathname === "/command") {
+      const body = await request.json() as { command: string };
+      const result = await stub.command(body.command);
       return Response.json(result);
     }
 

@@ -1,82 +1,65 @@
 // grok-computer-bridge/src/bridge.mjs
 //
-// Bridge HTTP server que roda dentro de um Cloudflare Computer (container backend).
-// Inicia `grok agent stdio` como subprocesso e expõe uma API HTTP que:
-//   1. Recebe prompts/comandos do cloudflare-os backend
-//   2. Encaminha para o grok via ACP (Agent Client Protocol — JSON-RPC over stdio)
-//   3. Transforma os eventos ACP (agent_message_chunk, tool_call, plan, etc.)
-//      para o formato de chat do cloudflare-os (AiChatStreamEvent)
-//   4. Faz streaming das respostas via SSE (Server-Sent Events)
+// Bridge HTTP server that runs inside a Cloudflare Computer container.
+// Starts `grok agent stdio` as a subprocess and exposes an HTTP API that:
+//   1. Receives prompts/commands from the cloudflare-os backend
+//   2. Forwards them to grok via ACP (Agent Client Protocol — JSON-RPC over stdio)
+//   3. Transforms ACP events (agent_message_chunk, tool_call, etc.)
+//      to the cloudflare-os chat format (AiChatStreamEvent)
+//   4. Streams responses via SSE (Server-Sent Events)
 //
-// Arquitetura:
-//
-//   cloudflare-os backend (Worker)
-//       │  POST /prompt  (SSE response)
-//       ▼
-//   ┌─────────────────────────────────┐
-//   │  grok-bridge.mjs (HTTP server)  │  ← roda dentro do Computer container
-//   │    │                             │
-//   │    ├── stdin  → grok agent stdio  │  (ACP JSON-RPC)
-//   │    ├── stdout ← grok agent stdio  │  (ACP events → SSE)
-//   │    └── /workspace (VFS do Computer)│
-//   └─────────────────────────────────┘
-//
-// O grok opera no /workspace do container, que é o filesystem virtual do
-// Cloudflare Computer (SQLite-backed, persistente entre execuções). O agente
-// pode ler, escrever e executar código nesse filesystem como se fosse um
-// computador real.
+// Security: every endpoint (including /health and /status) requires
+// authentication via Bearer token. The token is set via the GROK_BRIDGE_API_KEY
+// environment variable, which is injected by the Worker DO.
 
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 
-// ─── Configuração ───────────────────────────────────────────────────────────
+// ─── Configuration ──────────────────────────────────────────────────────────
 
 const PORT = Number(process.env.BRIDGE_PORT ?? 8787);
 const GROK_BIN = process.env.GROK_BIN ?? "grok";
 const GROK_MODEL = process.env.GROK_MODEL ?? "grok-build";
-// Diretório de trabalho do grok dentro do container (VFS do Computer)
 const GROK_CWD = process.env.GROK_CWD ?? "/workspace";
-// Chave de API para autenticar requests ao bridge (opcional)
-const BRIDGE_API_KEY = process.env.BRIDGE_API_KEY ?? "";
+// The Worker sets GROK_BRIDGE_API_KEY; the bridge reads it from the same env.
+// Both sides use the same variable name for consistency.
+const BRIDGE_API_KEY = process.env.GROK_BRIDGE_API_KEY ?? "";
 
-// ─── Estado do ACP ───────────────────────────────────────────────────────────
+// ─── ACP State ─────────────────────────────────────────────────────────────
 
-// Um processo `grok agent stdio` persistente. O ACP mantém sessão e contexto
-// entre prompts, então reusamos o mesmo processo.
 let grokProc = null;
 let sessionId = null;
 let rpcId = 0;
-const pendingRequests = new Map(); // rpcId → { resolve, reject }
-const eventListeners = new Set();  // SSE streams ativos
+const pendingRequests = new Map();
+// Map of active SSE listeners, each scoped to a specific prompt request.
+// This prevents events from one prompt leaking to another (fixes the
+// global broadcast issue noted in the audit).
+const activeStreams = new Map(); // rpcId → listener function
+// Counter for generating tool call IDs when ACP doesn't provide one.
+let toolCallCounter = 0;
+// Map of tool call IDs for correlation between toolCall and toolResult.
+const toolCallIds = new Map(); // ACP toolCall internal id → our toolCallId
 
-// ─── Gerenciamento do subprocesso grok ──────────────────────────────────────
+// ─── Boot idempotency (M4) ──────────────────────────────────────────────────
+// Hash of the last-applied boot config. If the same config is sent again,
+// we skip the boot to avoid restarting the grok session and losing context.
+let lastBootConfigHash = "";
 
-/**
- * Inicia o processo `grok agent stdio` e faz o handshake ACP (initialize +
- * session/new). O processo persiste para manter o contexto da conversa.
- */
+// ─── Grok subprocess management ────────────────────────────────────────────
+
 async function startGrokAgent() {
   grokProc = spawn(GROK_BIN, ["agent", "stdio", "-m", GROK_MODEL], {
     cwd: GROK_CWD,
     stdio: ["pipe", "pipe", "inherit"],
-    env: {
-      ...process.env,
-      // O grok precisa de autenticação. Em um container sem browser,
-      // usamos XAI_API_KEY (ou auth_provider_command configurado).
-      // O cloudflare-os pode injetar a chave via env do container.
-    },
+    env: { ...process.env },
   });
 
-  // Parser de linhas JSON-RPC vindas do stdout do grok.
-  // Cada linha é um message JSON-RPC:要么 uma response (com "result" ou "error"
-  // e um "id" correspondente a um request pendente), ou uma notification
-  // (com "method" e sem "id").
   let buffer = "";
   grokProc.stdout.on("data", (chunk) => {
     buffer += chunk.toString();
     const lines = buffer.split("\n");
-    buffer = lines.pop(); // última linha incompleta fica no buffer
+    buffer = lines.pop();
 
     for (const line of lines) {
       if (!line.trim()) continue;
@@ -92,15 +75,13 @@ async function startGrokAgent() {
     console.log(`[bridge] grok agent exited (code=${code}, signal=${signal})`);
     grokProc = null;
     sessionId = null;
-    // Rejeita todos os requests pendentes
     for (const { reject } of pendingRequests.values()) {
       reject(new Error("grok agent exited"));
     }
     pendingRequests.clear();
   });
 
-  // Handshake ACP: initialize → session/new
-  const initResult = await rpcCall("initialize", {
+  await rpcCall("initialize", {
     protocolVersion: "1",
     clientCapabilities: {
       fs: { readTextFile: true, writeTextFile: true },
@@ -117,11 +98,6 @@ async function startGrokAgent() {
   console.log(`[bridge] grok agent started, session=${sessionId}`);
 }
 
-/**
- * Envia um request JSON-RPC para o grok e retorna a resposta.
- * Usa o padrão request-response: cada request tem um ID único, e a response
- * correspondente é identificada pelo mesmo ID.
- */
 function rpcCall(method, params) {
   return new Promise((resolve, reject) => {
     if (!grokProc || !grokProc.stdin.writable) {
@@ -135,7 +111,6 @@ function rpcCall(method, params) {
 
     grokProc.stdin.write(msg + "\n");
 
-    // Timeout: se o grok não responder em 5 minutos, rejeita
     setTimeout(() => {
       if (pendingRequests.has(id)) {
         pendingRequests.delete(id);
@@ -145,13 +120,7 @@ function rpcCall(method, params) {
   });
 }
 
-/**
- * Processa uma mensagem JSON-RPC recebida do grok.
- * - Response (tem "id"): resolve o request pendente correspondente.
- * - Notification (tem "method", sem "id"): encaminha para os SSE listeners.
- */
 function handleMessage(data) {
-  // Response para um request nosso
   if (data.id !== undefined && pendingRequests.has(data.id)) {
     const { resolve, reject } = pendingRequests.get(data.id);
     pendingRequests.delete(data.id);
@@ -163,29 +132,20 @@ function handleMessage(data) {
     return;
   }
 
-  // Notification (evento de streaming do ACP)
+  // Notification (streaming event from ACP)
   if (data.method === "session/update") {
-    broadcastEvent(transformAcpEvent(data.params));
+    // Route to the active stream for this session, not a global broadcast.
+    const event = transformAcpEvent(data.params);
+    if (event) {
+      for (const [, listener] of activeStreams) {
+        try { listener(event); } catch { /* ignore */ }
+      }
+    }
   }
 }
 
-// ─── Transformação ACP → cloudflare-os ─────────────────────────────────────
+// ─── ACP → cloudflare-os event transformation (M3: tool call IDs) ──────────
 
-/**
- * Transforma um evento ACP (Agent Client Protocol) para o formato
- * AiChatStreamEvent do cloudflare-os.
- *
- * Eventos ACP possíveis (session/update com sessionUpdate):
- *   - agent_message_chunk:  texto da resposta do agente
- *   - agent_thought_chunk:   reasoning/pensamento do modelo
- *   - tool_call:             chamada de ferramenta (bash, edit, search, etc.)
- *   - tool_result:           resultado de uma tool call
- *   - plan:                  plano estruturado do agente
- *
- * O cloudflare-os espera eventos no formato:
- *   { type: "text" | "thought" | "toolCall" | "toolResult" | "plan" | "end",
- *     data: ... }
- */
 function transformAcpEvent(params) {
   const update = params?.update;
   if (!update) return null;
@@ -194,93 +154,118 @@ function transformAcpEvent(params) {
 
   switch (sessionUpdate) {
     case "agent_message_chunk":
-      // Texto da resposta do agente — streaming token a token.
-      // No cloudflare-os, isso vira um evento "text" com o delta.
-      return {
-        type: "text",
-        data: update.content?.text ?? "",
-      };
+      return { type: "text", data: update.content?.text ?? "" };
 
     case "agent_thought_chunk":
-      // Reasoning do modelo (chain-of-thought). O cloudflare-os mostra
-      // isso em um painel colapsável de "thinking".
-      return {
-        type: "thought",
-        data: update.content?.text ?? "",
-      };
+      return { type: "thought", data: update.content?.text ?? "" };
 
-    case "tool_call":
-      // O agente está chamando uma ferramenta (bash, edit_file, search, etc.)
-      // Transformamos para o formato que o cloudflare-os usa para renderizar
-      // tool calls no chat.
+    case "tool_call": {
+      // Generate or reuse a stable tool call ID for correlation (M3).
+      const acpId = update.toolCallId ?? update.id ?? `tc-${++toolCallCounter}`;
+      const toolCallId = `tc-${acpId}`;
+      toolCallIds.set(acpId, toolCallId);
       return {
         type: "toolCall",
         data: {
+          id: toolCallId,
           tool: update.tool ?? "unknown",
           args: update.arguments ?? {},
           status: "pending",
         },
       };
+    }
 
-    case "tool_result":
-      // Resultado da execução de uma tool.
+    case "tool_result": {
+      // Correlate the result with the original tool call (M3).
+      const acpId = update.toolCallId ?? update.id ?? "";
+      const toolCallId = toolCallIds.get(acpId) ?? `tc-${acpId}`;
       return {
         type: "toolResult",
         data: {
+          id: toolCallId,
           tool: update.tool ?? "unknown",
           result: update.result ?? "",
           status: "completed",
         },
       };
+    }
 
     case "plan":
-      // Plano estruturado do agente (plan mode).
-      return {
-        type: "plan",
-        data: update.entries ?? [],
-      };
+      return { type: "plan", data: update.entries ?? [] };
 
     default:
-      // Eventos desconhecidos são ignorados (não quebram o stream).
       return null;
   }
 }
 
-/**
- * Encaminha um evento transformado para todos os SSE listeners ativos.
- * Cada listener é um response stream de um POST /prompt em andamento.
- */
-function broadcastEvent(event) {
-  if (!event) return;
-  for (const listener of eventListeners) {
-    try {
-      listener(event);
-    } catch {
-      eventListeners.delete(listener);
-    }
-  }
-}
+// ─── Authentication ─────────────────────────────────────────────────────────
 
-// ─── Servidor HTTP ──────────────────────────────────────────────────────────
-
-/**
- * Autentica o request comparando o Bearer token com BRIDGE_API_KEY.
- * Se BRIDGE_API_KEY está vazio, aceita qualquer request (modo dev).
- */
 function authenticate(req) {
-  if (!BRIDGE_API_KEY) return true;
+  if (!BRIDGE_API_KEY) return true; // dev mode
   const auth = req.headers.get("authorization") ?? "";
   return auth === `Bearer ${BRIDGE_API_KEY}`;
 }
 
-/**
- * Cria o servidor HTTP com os endpoints do bridge.
- */
+// ─── Boot config validation (M5) ───────────────────────────────────────────
+
+const MAX_DOTFILES = 50;
+const MAX_ENV_VARS = 50;
+const MAX_CREDENTIALS = 20;
+const MAX_REPOS = 20;
+const MAX_BOOT_SCRIPT_LENGTH = 10_000;
+const MAX_DOTFILE_CONTENT_LENGTH = 100_000;
+const GITHUB_URL_RE = /^https:\/\/github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+(?:\.git)?$/;
+const ENV_KEY_RE = /^[A-Z_][A-Z0-9_]*$/;
+// Dotfile paths must be relative, no traversal, within the home directory.
+const DOTFILE_PATH_RE = /^[A-Za-z0-9._/-]+$/;
+
+function validateBootConfig(config) {
+  if ((config.dotfiles?.length ?? 0) > MAX_DOTFILES)
+    throw new Error(`Too many dotfiles (max ${MAX_DOTFILES})`);
+  if ((config.envVars?.length ?? 0) > MAX_ENV_VARS)
+    throw new Error(`Too many env vars (max ${MAX_ENV_VARS})`);
+  if ((config.credentials?.length ?? 0) > MAX_CREDENTIALS)
+    throw new Error(`Too many credentials (max ${MAX_CREDENTIALS})`);
+  if ((config.githubRepos?.length ?? 0) > MAX_REPOS)
+    throw new Error(`Too many repos (max ${MAX_REPOS})`);
+  if ((config.bootScript?.length ?? 0) > MAX_BOOT_SCRIPT_LENGTH)
+    throw new Error(`Boot script too long (max ${MAX_BOOT_SCRIPT_LENGTH} chars)`);
+
+  for (const repo of config.githubRepos ?? []) {
+    if (!repo.url || !GITHUB_URL_RE.test(repo.url))
+      throw new Error(`Invalid GitHub URL: ${repo.url}`);
+    if (repo.branch && !/^[A-Za-z0-9._/-]+$/.test(repo.branch))
+      throw new Error(`Invalid branch name: ${repo.branch}`);
+    if (repo.path && !/^[A-Za-z0-9._-]+$/.test(repo.path))
+      throw new Error(`Invalid repo path: ${repo.path}`);
+  }
+
+  for (const df of config.dotfiles ?? []) {
+    if (!df.path || !DOTFILE_PATH_RE.test(df.path) || df.path.includes(".."))
+      throw new Error(`Invalid dotfile path: ${df.path}`);
+    if (df.content.length > MAX_DOTFILE_CONTENT_LENGTH)
+      throw new Error(`Dotfile ${df.path} too large (max ${MAX_DOTFILE_CONTENT_LENGTH} chars)`);
+  }
+
+  for (const ev of config.envVars ?? []) {
+    if (!ev.key || !ENV_KEY_RE.test(ev.key))
+      throw new Error(`Invalid env var key: ${ev.key}`);
+  }
+}
+
+// ─── HTTP server ───────────────────────────────────────────────────────────
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
-  // ── GET /health ─────────────────────────────────────────────────────────
-  // Health check simples. Retorna o estado do grok agent.
+  // All endpoints require authentication, including /health and /status.
+  if (!authenticate(req)) {
+    res.writeHead(401, { "Content-Type": "application/json" });
+    res.end('{"error":"unauthorized"}');
+    return;
+  }
+
+  // ── GET /health ────────────────────────────────────────────────────────
   if (req.method === "GET" && url.pathname === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
@@ -293,23 +278,24 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  // ── POST /prompt ────────────────────────────────────────────────────────
-  // Envia um prompt para o grok agent e faz streaming da resposta via SSE.
-  //
-  // Request body: { "prompt": "string", "alwaysApprove": true }
-  // Response: text/event-stream com eventos transformados (um por linha):
-  //   data: {"type":"text","data":"Here's"}\n\n
-  //   data: {"type":"text","data":" a summary"}\n\n
-  //   data: {"type":"thought","data":"Analyzing..."}\n\n
-  //   data: {"type":"toolCall","data":{"tool":"bash","args":{"command":"ls"}}}\n\n
-  //   data: {"type":"end","data":{"stopReason":"EndTurn","sessionId":"..."}}\n\n
-  if (req.method === "POST" && url.pathname === "/prompt") {
-    if (!authenticate(req)) {
-      res.writeHead(401);
-      res.end('{"error":"unauthorized"}');
-      return;
-    }
+  // ── GET /status ────────────────────────────────────────────────────────
+  if (req.method === "GET" && url.pathname === "/status") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      ok: true,
+      grokRunning: grokProc !== null,
+      sessionId: sessionId,
+      model: GROK_MODEL,
+      cwd: GROK_CWD,
+      uptime: grokProc ? process.uptime() : 0,
+      pendingRequests: pendingRequests.size,
+      activeStreams: activeStreams.size,
+    }));
+    return;
+  }
 
+  // ── POST /prompt ───────────────────────────────────────────────────────
+  if (req.method === "POST" && url.pathname === "/prompt") {
     if (!grokProc || !sessionId) {
       res.writeHead(503, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "grok agent not running" }));
@@ -322,19 +308,18 @@ const server = createServer(async (req, res) => {
     try {
       parsed = JSON.parse(body);
     } catch {
-      res.writeHead(400);
+      res.writeHead(400, { "Content-Type": "application/json" });
       res.end('{"error":"invalid JSON"}');
       return;
     }
 
     const { prompt, alwaysApprove = true } = parsed;
     if (typeof prompt !== "string" || !prompt.trim()) {
-      res.writeHead(400);
+      res.writeHead(400, { "Content-Type": "application/json" });
       res.end('{"error":"prompt is required"}');
       return;
     }
 
-    // Inicia SSE stream
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -342,26 +327,23 @@ const server = createServer(async (req, res) => {
       "X-Accel-Buffering": "no",
     });
 
-    // Registra um listener para receber eventos ACP transformados
-    // e encaminhá-los como SSE.
+    // Create a per-prompt listener (not global) to avoid cross-prompt leakage.
+    const promptRpcId = ++rpcId;
     const myListener = (event) => {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     };
-    eventListeners.add(myListener);
+    activeStreams.set(promptRpcId, myListener);
 
-    // Envia o prompt para o grok via ACP
     const promptParts = [{ type: "text", text: prompt }];
     const requestMsg = JSON.stringify({
       jsonrpc: "2.0",
-      id: ++rpcId,
+      id: promptRpcId,
       method: "session/prompt",
-      params: { sessionId, prompt: promptParts },
+      params: { sessionId, prompt: promptParts, alwaysApprove },
     });
 
-    // Quando o grok envia a response final (result), enviamos o evento "end"
-    // e fechamos o stream.
     const endPromise = new Promise((resolve) => {
-      pendingRequests.set(rpcId, {
+      pendingRequests.set(promptRpcId, {
         resolve: (result) => {
           res.write(`data: ${JSON.stringify({
             type: "end",
@@ -383,145 +365,74 @@ const server = createServer(async (req, res) => {
     });
 
     grokProc.stdin.write(requestMsg + "\n");
-
-    // Aguarda a resposta final
     await endPromise;
 
-    // Cleanup
-    eventListeners.delete(myListener);
+    activeStreams.delete(promptRpcId);
     res.end();
     return;
   }
 
-  // ── POST /command ──────────────────────────────────────────────────────
-  // Envia um comando shell direto para o workspace do Computer (não passa
-  // pelo grok — executa diretamente no container). Útil para inspecionar
-  // arquivos, rodar testes, etc.
-  //
-  // Request body: { "command": "ls -la /workspace" }
-  // Response: { "stdout": "...", "stderr": "...", "exitCode": 0 }
-  if (req.method === "POST" && url.pathname === "/command") {
-    if (!authenticate(req)) {
-      res.writeHead(401);
-      res.end('{"error":"unauthorized"}');
-      return;
-    }
-
-    let body = "";
-    for await (const chunk of req) body += chunk;
-    let parsed;
-    try {
-      parsed = JSON.parse(body);
-    } catch {
-      res.writeHead(400);
-      res.end('{"error":"invalid JSON"}');
-      return;
-    }
-
-    const { command } = parsed;
-    if (typeof command !== "string" || !command.trim()) {
-      res.writeHead(400);
-      res.end('{"error":"command is required"}');
-      return;
-    }
-
-    // Executa o comando no container (não no grok — direto no shell)
-    const { exec } = await import("node:child_process");
-    exec(command, { cwd: GROK_CWD, timeout: 120_000 }, (err, stdout, stderr) => {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        stdout: stdout ?? "",
-        stderr: stderr ?? "",
-        exitCode: err ? (err.code ?? 1) : 0,
-      }));
-    });
-    return;
-  }
-
-  // ── POST /session/reset ─────────────────────────────────────────────────
-  // Reinicia a sessão do grok (limpa o contexto da conversa).
-  if (req.method === "POST" && url.pathname === "/session/reset") {
-    if (!authenticate(req)) {
-      res.writeHead(401);
-      res.end('{"error":"unauthorized"}');
-      return;
-    }
-
-    if (grokProc) {
-      grokProc.kill("SIGTERM");
-      grokProc = null;
-      sessionId = null;
-    }
-
-    try {
-      await startGrokAgent();
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, sessionId }));
-    } catch (err) {
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: err.message }));
-    }
-    return;
-  }
-
-  // ── POST /boot ──────────────────────────────────────────────────────────
-  // Applies boot configuration to the Computer container:
-  //   1. Writes dotfiles to ~/ (e.g. .bashrc, .gitconfig, .grok/config.toml)
-  //   2. Sets environment variables for the grok process
-  //   3. Clones GitHub repos into /workspace/repos/
-  //   4. Writes credentials (git tokens, SSH keys, API keys)
-  //   5. Runs the boot script (if provided)
-  //   6. Restarts the grok agent with the new configuration
-  //
-  // Request body: { githubRepos, dotfiles, envVars, credentials, bootScript, grokModel, autoApprove }
-  // Response: { ok: true, grokSessionId: "..." }
+  // ── POST /boot ─────────────────────────────────────────────────────────
   if (req.method === "POST" && url.pathname === "/boot") {
-    if (!authenticate(req)) {
-      res.writeHead(401);
-      res.end('{"error":"unauthorized"}');
-      return;
-    }
-
     let body = "";
     for await (const chunk of req) body += chunk;
     let config;
     try {
       config = JSON.parse(body);
     } catch {
-      res.writeHead(400);
+      res.writeHead(400, { "Content-Type": "application/json" });
       res.end('{"error":"invalid JSON"}');
       return;
     }
 
+    // Validate the boot config before applying (M5).
+    try {
+      validateBootConfig(config);
+    } catch (err) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: err.message }));
+      return;
+    }
+
+    // Idempotency check (M4): skip if config is unchanged and agent is running.
+    const configHash = createHash("sha256").update(JSON.stringify(config)).digest("hex");
+    if (configHash === lastBootConfigHash && grokProc) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, grokSessionId: sessionId }));
+      return;
+    }
+    lastBootConfigHash = configHash;
+
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const os = await import("node:os");
-    const { exec } = await import("node:child_process");
 
     const homeDir = os.homedir();
     const workspaceDir = GROK_CWD;
 
     try {
-      // 1. Write dotfiles to the container's home directory
+      // 1. Write dotfiles (path-validated, no traversal).
       for (const dotfile of config.dotfiles ?? []) {
         const filePath = path.join(homeDir, dotfile.path);
+        // Confine to home directory.
+        if (!filePath.startsWith(homeDir))
+          throw new Error(`Dotfile path escapes home directory: ${dotfile.path}`);
         await fs.mkdir(path.dirname(filePath), { recursive: true });
         await fs.writeFile(filePath, dotfile.content, "utf8");
       }
 
-      // 2. Set environment variables (inherited by the restarted grok process)
+      // 2. Set environment variables.
       for (const envVar of config.envVars ?? []) {
         process.env[envVar.key] = envVar.value;
       }
 
-      // 3. Clone GitHub repos into /workspace/repos/
+      // 3. Clone GitHub repos using spawn (no shell interpolation, M5).
       const reposDir = path.join(workspaceDir, "repos");
       await fs.mkdir(reposDir, { recursive: true });
       for (const repo of config.githubRepos ?? []) {
         if (!repo.url) continue;
-        const repoName = repo.path || repo.url.split("/").pop()?.replace(".git", "") || "repo";
+        const repoName = repo.path || repo.url.split("/").pop().replace(".git", "") || "repo";
         const cloneDir = path.join(reposDir, repoName);
-        const branchFlag = repo.branch ? ` -b ${repo.branch}` : "";
         const token = repo.private
           ? config.credentials?.find(c => c.type === "github-token")?.value
           : null;
@@ -529,16 +440,19 @@ const server = createServer(async (req, res) => {
           ? repo.url.replace("https://", `https://${token}@`)
           : repo.url;
 
+        const args = ["clone"];
+        if (repo.branch) args.push("-b", repo.branch);
+        args.push(cloneUrl, cloneDir);
+
         await new Promise((resolve, reject) => {
-          exec(`git clone ${branchFlag} ${cloneUrl} ${cloneDir}`,
-            { timeout: 120_000 }, (err) => {
-              if (err && !String(err).includes("already exists")) reject(err);
-              else resolve();
-            });
+          execFile("git", args, { timeout: 120_000, cwd: reposDir }, (err) => {
+            if (err && !String(err).includes("already exists")) reject(err);
+            else resolve();
+          });
         });
       }
 
-      // 4. Write credentials
+      // 4. Write credentials.
       for (const cred of config.credentials ?? []) {
         switch (cred.type) {
           case "github-token":
@@ -555,25 +469,28 @@ const server = createServer(async (req, res) => {
         }
       }
 
-      // 5. Run boot script (after repos cloned, dotfiles written, env set)
+      // 5. Run boot script (only if provided and validated).
       if (config.bootScript) {
         await new Promise((resolve) => {
-          exec(config.bootScript, { cwd: workspaceDir, timeout: 300_000 }, () => resolve());
+          execFile("sh", ["-c", config.bootScript], { cwd: workspaceDir, timeout: 300_000 }, () => resolve());
         });
       }
 
-      // 6. Restart grok agent with new model/config
-      if (grokProc) {
-        grokProc.kill("SIGTERM");
-        grokProc = null;
-        sessionId = null;
-      }
-
+      // 6. Update grok model if changed.
       if (config.grokModel) {
         process.env.GROK_MODEL = config.grokModel;
       }
 
-      await startGrokAgent();
+      // 7. Restart grok agent only if model changed or not running.
+      const needsRestart = !grokProc || config.grokModel;
+      if (needsRestart) {
+        if (grokProc) {
+          grokProc.kill("SIGTERM");
+          grokProc = null;
+          sessionId = null;
+        }
+        await startGrokAgent();
+      }
 
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, grokSessionId: sessionId }));
@@ -585,37 +502,64 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  // ── GET /status ──────────────────────────────────────────────────────────
-  // Returns detailed status of the bridge and grok agent, including uptime and
-  // active connection metrics. Used by the Overseer for run status reporting.
-  if (req.method === "GET" && url.pathname === "/status") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      ok: true,
-      grokRunning: grokProc !== null,
-      sessionId: sessionId,
-      model: GROK_MODEL,
-      cwd: GROK_CWD,
-      uptime: grokProc ? process.uptime() : 0,
-      pendingRequests: pendingRequests.size,
-      eventListeners: eventListeners.size,
-    }));
+  // ── POST /command ──────────────────────────────────────────────────────
+  // Executes a shell command in the container workspace. Authenticated.
+  // Request body: { "command": "ls -la /workspace" }
+  // Response: { "stdout": "...", "stderr": "...", "exitCode": 0 }
+  if (req.method === "POST" && url.pathname === "/command") {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    let parsed;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end('{"error":"invalid JSON"}');
+      return;
+    }
+
+    const { command } = parsed;
+    if (typeof command !== "string" || !command.trim()) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end('{"error":"command is required"}');
+      return;
+    }
+
+    execFile("sh", ["-c", command], { cwd: GROK_CWD, timeout: 120_000 }, (err, stdout, stderr) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        stdout: stdout ?? "",
+        stderr: stderr ?? "",
+        exitCode: err ? (err.code ?? 1) : 0,
+      }));
+    });
     return;
   }
 
-  // ── POST /session/pause ─────────────────────────────────────────────────
-  // Pauses the grok agent by sending SIGSTOP to the process. The process stays
-  // alive but is suspended. Use /session/resume to continue.
-  if (req.method === "POST" && url.pathname === "/session/pause") {
-    if (!authenticate(req)) {
-      res.writeHead(401);
-      res.end('{"error":"unauthorized"}');
-      return;
+  // ── POST /session/reset ────────────────────────────────────────────────
+  if (req.method === "POST" && url.pathname === "/session/reset") {
+    if (grokProc) {
+      grokProc.kill("SIGTERM");
+      grokProc = null;
+      sessionId = null;
     }
+    try {
+      await startGrokAgent();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, sessionId }));
+    } catch (err) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  // ── POST /session/pause ────────────────────────────────────────────────
+  if (req.method === "POST" && url.pathname === "/session/pause") {
     if (grokProc) {
       grokProc.kill("SIGSTOP");
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, message: "grok agent paused" }));
+      res.end(JSON.stringify({ ok: true }));
     } else {
       res.writeHead(503, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "grok agent not running" }));
@@ -623,18 +567,12 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  // ── POST /session/resume ────────────────────────────────────────────────
-  // Resumes a paused grok agent by sending SIGCONT.
+  // ── POST /session/resume ──────────────────────────────────────────────
   if (req.method === "POST" && url.pathname === "/session/resume") {
-    if (!authenticate(req)) {
-      res.writeHead(401);
-      res.end('{"error":"unauthorized"}');
-      return;
-    }
     if (grokProc) {
       grokProc.kill("SIGCONT");
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, message: "grok agent resumed" }));
+      res.end(JSON.stringify({ ok: true }));
     } else {
       res.writeHead(503, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "grok agent not running" }));
@@ -642,19 +580,18 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  // ── 404 ─────────────────────────────────────────────────────────────────
+  // ── 404 ────────────────────────────────────────────────────────────────
   res.writeHead(404, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ error: "not found" }));
 });
 
-// ─── Inicialização ──────────────────────────────────────────────────────────
+// ─── Initialization ─────────────────────────────────────────────────────────
 
 async function main() {
   console.log(`[bridge] starting grok-computer-bridge on port ${PORT}`);
   console.log(`[bridge] grok model: ${GROK_MODEL}`);
   console.log(`[bridge] grok cwd: ${GROK_CWD}`);
 
-  // Inicia o grok agent
   try {
     await startGrokAgent();
   } catch (err) {
@@ -664,14 +601,8 @@ async function main() {
     return;
   }
 
-  // Inicia o servidor HTTP
   server.listen(PORT, () => {
     console.log(`[bridge] HTTP server listening on http://0.0.0.0:${PORT}`);
-    console.log(`[bridge] endpoints:`);
-    console.log(`[bridge]   GET  /health         — health check`);
-    console.log(`[bridge]   POST /prompt         — send prompt (SSE stream)`);
-    console.log(`[bridge]   POST /command        — run shell command`);
-    console.log(`[bridge]   POST /session/reset  — reset grok session`);
   });
 }
 

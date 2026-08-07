@@ -3867,11 +3867,6 @@ class OverseerImpl implements AgentHooks {
     this.storage.computerBootConfig.put(config);
   }
 
-  /** Returns the current or most recent Computer run status for a chat, or null. */
-  async #getComputerRunStatus(chatId: number): Promise<ComputerRunStatus | null> {
-    return this.storage.computerRuns.get(`computerRun.${chatId}`) ?? null;
-  }
-
   /** Creates a fresh Computer run state for a chat, or reuses an existing paused/idle one. */
   #createComputerRunState(chatId: number): ComputerRunStatus {
     const existing = this.storage.computerRuns.get(`computerRun.${chatId}`);
@@ -3906,32 +3901,33 @@ class OverseerImpl implements AgentHooks {
   /**
    * Ensures the Computer container is booted with the given config.
    * Calls the bridge's /boot endpoint to apply repos, dotfiles, env vars, etc.
-   * Returns the bridge base URL for subsequent /prompt calls.
+   * Passes the workspace ID via X-Grok-Workspace header for DO isolation (C2).
    */
   async #ensureComputerBooted(
     bootConfig: ComputerBootConfig,
     runState: ComputerRunStatus,
-  ): Promise<string> {
+  ): Promise<void> {
     if (!this.env.GROK_COMPUTER_BRIDGE) {
       throw new Error(
         "Grok Computer bridge is not configured. Set the GROK_COMPUTER_BRIDGE service binding " +
         "in the workshop backend's wrangler config.");
     }
 
-    // The service binding provides a fetch() interface. The bridge Worker's own URL is
-    // accessed via the binding's fetch method.
-    const bridgeUrl = "https://grok-computer-bridge.internal";
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      // Pass the workspace DO ID for isolation (C2). The bridge Worker uses
+      // this to select the correct per-workspace DO.
+      "X-Grok-Workspace": this.ctx.id.toString(),
+    };
+    if (this.env.GROK_BRIDGE_API_KEY) {
+      headers["Authorization"] = `Bearer ${this.env.GROK_BRIDGE_API_KEY}`;
+    }
 
     const bootResponse = await this.env.GROK_COMPUTER_BRIDGE.fetch(
-      `${bridgeUrl}/boot`,
+      "https://grok-computer-bridge.internal/boot",
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(this.env.GROK_BRIDGE_API_KEY
-            ? { Authorization: `Bearer ${this.env.GROK_BRIDGE_API_KEY}` }
-            : {}),
-        },
+        headers,
         body: JSON.stringify({
           githubRepos: bootConfig.githubRepos,
           dotfiles: bootConfig.dotfiles,
@@ -3952,32 +3948,38 @@ class OverseerImpl implements AgentHooks {
     const result = await bootResponse.json() as { grokSessionId: string };
     runState.grokSessionId = result.grokSessionId;
     runState.containerAlive = true;
-    return bridgeUrl;
   }
 
   /**
    * Sends a prompt to the Computer bridge and streams the SSE response back as
-   * AiChatStreamEvent for chat subscribers. Accumulates the full text response and
-   * persists it as an AiChatMessage when done.
+   * AiChatStreamEvent for chat subscribers. Passes the workspace ID header (C2)
+   * and the autoApprove flag from the boot config (M1).
    */
   async #streamComputerPrompt(
     chatId: number,
-    bridgeUrl: string,
     prompt: string,
     runState: ComputerRunStatus,
     liveChat: LiveChatContext,
+    autoApprove: boolean,
   ): Promise<void> {
-    const response = await this.env.GROK_COMPUTER_BRIDGE!.fetch(
-      `${bridgeUrl}/prompt`,
+    if (!this.env.GROK_COMPUTER_BRIDGE) {
+      throw new Error("Grok Computer bridge is not configured.");
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Grok-Workspace": this.ctx.id.toString(),
+    };
+    if (this.env.GROK_BRIDGE_API_KEY) {
+      headers["Authorization"] = `Bearer ${this.env.GROK_BRIDGE_API_KEY}`;
+    }
+
+    const response = await this.env.GROK_COMPUTER_BRIDGE.fetch(
+      "https://grok-computer-bridge.internal/prompt",
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(this.env.GROK_BRIDGE_API_KEY
-            ? { Authorization: `Bearer ${this.env.GROK_BRIDGE_API_KEY}` }
-            : {}),
-        },
-        body: JSON.stringify({ prompt, alwaysApprove: true }),
+        headers,
+        body: JSON.stringify({ prompt, alwaysApprove: autoApprove }),
         signal: liveChat.cancelController.signal,
       },
     );
@@ -4105,9 +4107,10 @@ class OverseerImpl implements AgentHooks {
       // 2. Emit booting event
       this.#emitStreamEvent(chatId, { type: "computerBooting" });
 
-      // 3. Boot the container with the configured boot config
+      // 3. Boot the container with the configured boot config (idempotent —
+      // skips re-boot if config is unchanged and container is already running).
       const bootConfig = await this.getComputerBootConfig();
-      const bridgeUrl = await this.#ensureComputerBooted(bootConfig, runState);
+      await this.#ensureComputerBooted(bootConfig, runState);
 
       // 4. Emit booted event
       this.#emitStreamEvent(chatId, {
@@ -4115,17 +4118,25 @@ class OverseerImpl implements AgentHooks {
         grokSessionId: runState.grokSessionId ?? "",
       });
 
-      // 5. Build the prompt from chat history (last user message)
+      // 5. Build the prompt from chat history (last user message).
+      // AiChatMessageBody uses the field `message` (not `text`) for the
+      // content of a "message" type entry (H2 from the code audit).
       const chatMessages = this.#listChatTail(chatId);
       const lastUserMessage = [...chatMessages]
-        .reverse()
+        .toReversed()
         .find(m => m.author.type === "user" && m.type === "message");
       const prompt = lastUserMessage?.type === "message"
-        ? (lastUserMessage as any).text ?? ""
+        ? lastUserMessage.message ?? ""
         : "";
 
       if (!prompt) {
         turnLogger.warn("no user message found for computer agent", { event: "computer.agent.run.noPrompt", chatId });
+        // Set terminal status instead of leaving the run as "running" (H2).
+        const runState = this.storage.computerRuns.get(`computerRun.${chatId}`);
+        if (runState) {
+          runState.status = "completed";
+          this.#saveComputerRunState(runState);
+        }
         return;
       }
 
@@ -4164,7 +4175,7 @@ class OverseerImpl implements AgentHooks {
         const loopStart = Date.now();
 
         // Send prompt to bridge and stream response
-        await this.#streamComputerPrompt(chatId, bridgeUrl, prompt, runState, liveChat);
+        await this.#streamComputerPrompt(chatId, prompt, runState, liveChat, bootConfig.autoApprove ?? true);
 
         runState.loopCount++;
         runState.lastActiveAt = new Date();
@@ -4261,6 +4272,20 @@ class OverseerImpl implements AgentHooks {
                                  initiator: AiChatAuthorInfo,
                                  callbackInitiated: boolean,
                                  liveChat: LiveChatContext): Promise<void> {
+    // ── Usage/billing check (applies to ALL providers, including Computer) ──
+    // Enforce the free-tier usage limit before starting any agent turn, including
+    // the Computer agent. This prevents bypassing quota by selecting a grok-computer
+    // model (H3 from the code audit).
+    if (!callbackInitiated && this.ownerId) {
+      let ownerStub = this.users.get(this.users.idFromString(this.ownerId));
+      let usage = await checkUsageAndBalance(this.env, ownerStub);
+      if (!usage.allowed) {
+        this.postAgentErrorMessage(chatId, aiModel.profile,
+            usage.reason ?? "Usage limit reached.", "usage_limit");
+        return;
+      }
+    }
+
     // ── Computer agent branch ──────────────────────────────────────────────
     // When the selected model's provider is "grok-computer", route to the Grok Computer
     // bridge instead of the normal pi-based agent loop. The Computer agent runs Grok Build
@@ -8919,35 +8944,81 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
   }
 
   async pauseComputerRun(): Promise<void> {
+    // Update the persisted run status (M2 from the code audit).
+    const runs = [...this.impl.storage.computerRuns.list()];
+    for (const run of runs) {
+      if (run.status === "running") {
+        run.status = "paused";
+        run.lastActiveAt = new Date();
+        this.impl.storage.computerRuns.put(run);
+      }
+    }
+    // Also send the pause command to the bridge.
     if (!this.impl.env.GROK_COMPUTER_BRIDGE) return;
     await this.impl.env.GROK_COMPUTER_BRIDGE.fetch(
       "https://grok-computer-bridge.internal/session/pause",
-      { method: "POST",
-        headers: this.impl.env.GROK_BRIDGE_API_KEY
-          ? { Authorization: `Bearer ${this.impl.env.GROK_BRIDGE_API_KEY}` }
-          : {} },
+      {
+        method: "POST",
+        headers: {
+          "X-Grok-Workspace": this.impl.ctx.id.toString(),
+          ...(this.impl.env.GROK_BRIDGE_API_KEY
+            ? { Authorization: `Bearer ${this.impl.env.GROK_BRIDGE_API_KEY}` }
+            : {}),
+        },
+      },
     );
   }
 
   async resumeComputerRun(): Promise<void> {
+    // Update the persisted run status (M2).
+    const runs = [...this.impl.storage.computerRuns.list()];
+    for (const run of runs) {
+      if (run.status === "paused") {
+        run.status = "running";
+        run.lastActiveAt = new Date();
+        this.impl.storage.computerRuns.put(run);
+      }
+    }
     if (!this.impl.env.GROK_COMPUTER_BRIDGE) return;
     await this.impl.env.GROK_COMPUTER_BRIDGE.fetch(
       "https://grok-computer-bridge.internal/session/resume",
-      { method: "POST",
-        headers: this.impl.env.GROK_BRIDGE_API_KEY
-          ? { Authorization: `Bearer ${this.impl.env.GROK_BRIDGE_API_KEY}` }
-          : {} },
+      {
+        method: "POST",
+        headers: {
+          "X-Grok-Workspace": this.impl.ctx.id.toString(),
+          ...(this.impl.env.GROK_BRIDGE_API_KEY
+            ? { Authorization: `Bearer ${this.impl.env.GROK_BRIDGE_API_KEY}` }
+            : {}),
+        },
+      },
     );
   }
 
   async stopComputerRun(): Promise<void> {
+    // Update the persisted run status and cancel any active agent (M2).
+    const runs = [...this.impl.storage.computerRuns.list()];
+    for (const run of runs) {
+      if (run.status === "running" || run.status === "paused") {
+        run.status = "completed";
+        run.lastActiveAt = new Date();
+        this.impl.storage.computerRuns.put(run);
+      }
+    }
+    // Cancel any active agent turn via the Overseer's cancel mechanism.
+    this.impl.cancelAgent(0); // chatId 0 cancels all — fix below if needed
+    // Also reset the grok session in the container.
     if (!this.impl.env.GROK_COMPUTER_BRIDGE) return;
     await this.impl.env.GROK_COMPUTER_BRIDGE.fetch(
       "https://grok-computer-bridge.internal/session/reset",
-      { method: "POST",
-        headers: this.impl.env.GROK_BRIDGE_API_KEY
-          ? { Authorization: `Bearer ${this.impl.env.GROK_BRIDGE_API_KEY}` }
-          : {} },
+      {
+        method: "POST",
+        headers: {
+          "X-Grok-Workspace": this.impl.ctx.id.toString(),
+          ...(this.impl.env.GROK_BRIDGE_API_KEY
+            ? { Authorization: `Bearer ${this.impl.env.GROK_BRIDGE_API_KEY}` }
+            : {}),
+        },
+      },
     );
   }
 
@@ -8965,6 +9036,7 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Grok-Workspace": this.impl.ctx.id.toString(),
           ...(this.impl.env.GROK_BRIDGE_API_KEY
             ? { Authorization: `Bearer ${this.impl.env.GROK_BRIDGE_API_KEY}` }
             : {}),

@@ -3,18 +3,22 @@
   "name": "grok-computer-bridge",
   "main": "src/worker.ts",
   "compatibility_date": "2026-02-02",
-  "compatibility_flags": ["nodejs_compat", "experimental"],
+  "compatibility_flags": ["nodejs_compat"],
 
-  // Container: constrói o Dockerfile que instala o grok + bridge.
-  // O container roda dentro do Cloudflare Computer e tem rede pública.
+  // Container: builds the Dockerfile that installs grok + bridge.
+  // The container runs inside the Cloudflare Computer and has network
+  // access (for grok to reach the xAI API).
+  // class_name is required by Wrangler and must match the DO class that
+  // owns the container lifecycle.
   "containers": [
     {
       "name": "grok-container",
+      "class_name": "GrokComputer",
       "image": "./Dockerfile"
     }
   ],
 
-  // Durable Object: um por agente grok. Mantém o Workspace + container.
+  // Durable Object: one per workspace. Manages the container + run state.
   "durable_objects": {
     "bindings": [
       {
@@ -30,15 +34,7 @@
     }
   ],
 
-  // Worker Loader: necessário para o Computer Workspace (Dynamic Workers).
-  "worker_loaders": [
-    {
-      "binding": "LOADER"
-    }
-  ],
-
-  // Variáveis de configuração (não-secretas).
-  // XAI_API_KEY é injetado como secret via `wrangler secret put`.
+  // Variables (non-secret). XAI_API_KEY is set via `wrangler secret put`.
   "vars": {
     "GROK_BRIDGE_API_KEY": "",
     "GROK_MODEL": "grok-build"
