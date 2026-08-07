@@ -295,6 +295,51 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
     this.vendors = buildGatekeeperVendorMap(env);
   }
 
+  // Pre-seed a cf-proxy model for new users when the deployment configures CF_PROXY_DEFAULT_*.
+  // Called once from each account-creation path (createAccount, authenticateFromCfAccess,
+  // loginOrCreateViaGatekeeper) right after the profile is written. Idempotent: if the model
+  // already exists in the user's aiModels collection, it is not re-added. When the model is
+  // seeded, it is also set as the user's preferred model so they can start chatting immediately.
+  //
+  // The proxy API key (CF_PROXY_DEFAULT_API_KEY) is a Worker secret stored only in the user's
+  // aiModels record (which lives in the Durable Object's SQLite storage). It is never logged,
+  // never sent to the client (the client only sees AiChatAuthorInfo, not AiModelConfig), and
+  // never forwarded to the upstream — the proxy holds the upstream credentials itself.
+  #seedDefaultProxyModel(): void {
+    const model = this.env.CF_PROXY_DEFAULT_MODEL?.trim();
+    const apiUrl = this.env.CF_PROXY_DEFAULT_API_URL?.trim();
+    const apiKey = this.env.CF_PROXY_DEFAULT_API_KEY?.trim();
+    if (!model || !apiUrl || !apiKey) return;
+
+    // Already seeded (e.g. account existed before the env vars were set and the user is
+    // re-authenticating). Don't clobber a model the user may have deleted or reconfigured.
+    if (this.storage.aiModels.get(model)) return;
+
+    // Resolve the display name: explicit override > SUGGESTED_MODELS entry > the model ID.
+    const suggested = SUGGESTED_MODELS["cf-proxy"]?.[model];
+    const displayName = this.env.CF_PROXY_DEFAULT_DISPLAY_NAME?.trim()
+        || suggested?.name
+        || model;
+
+    this.storage.aiModels.put({
+      profile: { type: "agent", id: model, name: displayName },
+      config: {
+        provider: "cf-proxy",
+        model,
+        apiToken: apiKey,
+        apiUrl,
+      },
+    });
+
+    // Set as preferred so the user lands in a working chat without manual model selection.
+    this.storage.preferredModel.put(model);
+
+    logger.info("seeded cf-proxy default model for new user", {
+      event: "user.model.proxy.seeded",
+      modelId: model,
+    });
+  }
+
   async authenticate(token: string): Promise<void> {
     let tokenBytes = Uint8Array.fromBase64(token);
     let hash = await crypto.subtle.digest('SHA-256', tokenBytes);
@@ -320,6 +365,7 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
         name: email.split("@")[0],
         id: email,
       });
+      this.#seedDefaultProxyModel();
       return true;
     }
 
@@ -381,6 +427,8 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
     let passwordHashHash = new Uint8Array(await crypto.subtle.digest('SHA-256', passwordHash));
     this.storage.passwordHashHash.put(passwordHashHash);
 
+    this.#seedDefaultProxyModel();
+
     return this.#newSessionToken();
   }
 
@@ -405,6 +453,7 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
         name: email.split("@")[0],
         id: email,
       });
+      this.#seedDefaultProxyModel();
     }
     return this.#newSessionToken();
   }

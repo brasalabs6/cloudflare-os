@@ -246,6 +246,9 @@ for (const gk of gatekeepers) {
     // over HTTPS with tokens).
     "CF_AI_GATEWAY", "CF_AI_GATEWAY_PROVIDERS", "CF_AI_GATEWAY_ACCOUNT_ID",
     "CF_AI_GATEWAY_API_TOKEN", "CF_AI_GATEWAY_WAI", "CF_AI_GATEWAY_WAI_DIRECT",
+    // CF AI Proxy default model: pre-seeds a cf-proxy model for new users when all three are set.
+    "CF_PROXY_DEFAULT_MODEL", "CF_PROXY_DEFAULT_API_URL", "CF_PROXY_DEFAULT_API_KEY",
+    "CF_PROXY_DEFAULT_DISPLAY_NAME",
   ];
   // OAuth app credentials (GOOGLE_/GITHUB_/CLOUDFLARE_OAUTH_*) are NOT passed to the backend anymore;
   // they are injected into the gatekeeper Workers (see SHARED_GATEKEEPER_CREDS below).

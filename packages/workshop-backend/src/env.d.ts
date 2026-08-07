@@ -82,6 +82,15 @@ declare global {
 
       // Minimum connected-account balance (USD) to proceed via BYOK. Defaults to
       // MINIMUM_CLOUDFLARE_BALANCE.
+
+      // CF AI Proxy default model: when all three are set, every new user account is pre-seeded
+      // with a cf-proxy model pointing at the deployment's proxy, and it is set as the user's
+      // preferred model — so new users can start chatting immediately without manual model setup.
+      // The key is a Worker secret (never logged, never sent to the client).
+      CF_PROXY_DEFAULT_MODEL?: string;       // Model ID (e.g. "@cf/zai-org/glm-5.2")
+      CF_PROXY_DEFAULT_API_URL?: string;     // Proxy endpoint (e.g. "https://…/v1")
+      CF_PROXY_DEFAULT_API_KEY?: string;      // Proxy Bearer token (secret)
+      CF_PROXY_DEFAULT_DISPLAY_NAME?: string; // Optional display name override
       MINIMUM_CLOUDFLARE_BALANCE?: string;
     }
   }
