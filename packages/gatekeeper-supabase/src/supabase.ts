@@ -190,6 +190,12 @@ function getBasePath(env: Env): string {
   return path === "/" ? "" : path;
 }
 
+function getBaseUrlForRequest(req: Request, env: Env): string {
+  if (env.BASE_URL) return getBaseUrl(env);
+  const url = new URL(req.url);
+  return `${url.origin}${getBasePath(env)}`;
+}
+
 function projectUrl(ref: string): string {
   return `https://supabase.com/dashboard/project/${ref}`;
 }
@@ -290,7 +296,7 @@ export default {
 
       const redirectUrl = new URL("https://api.supabase.com/v1/oauth/authorize");
       redirectUrl.searchParams.set("client_id", env.CLIENT_ID);
-      redirectUrl.searchParams.set("redirect_uri", `${getBaseUrl(env)}/oauth`);
+      redirectUrl.searchParams.set("redirect_uri", `${getBaseUrlForRequest(req, env)}/oauth`);
       redirectUrl.searchParams.set("response_type", "code");
       redirectUrl.searchParams.set("state", `${doId}:${oauthNonce}`);
       return Response.redirect(redirectUrl.toString(), 302);
@@ -321,7 +327,7 @@ export default {
       const stub: DurableObjectStub<UserAccount> = ctx.exports.UserAccount.get(
         ctx.exports.UserAccount.idFromString(doId),
       );
-      const accepted = await stub.acceptAuthCode(code, oauthNonce);
+      const accepted = await stub.acceptAuthCode(code, oauthNonce, getBaseUrlForRequest(req, env));
       if (!accepted) {
         return new Response(INVALID_LINK_HTML, { headers: { "Content-Type": "text/html; charset=utf-8" } });
       }
@@ -355,7 +361,7 @@ export class GatekeeperVendor extends WorkerEntrypoint<Env> implements Gatekeepe
     const userObjectId = this.ctx.exports.UserAccount.newUniqueId();
     const initiationNonce = generateNonce();
     await this.ctx.exports.UserAccount.get(userObjectId).setCallback(callback, initiationNonce);
-    return { url: `${getBaseUrl(this.env)}/${userObjectId.toString()}/${initiationNonce}` };
+    return { url: `${getBasePath(this.env)}/${userObjectId.toString()}/${initiationNonce}` };
   }
 
   async getSupportedResources(): Promise<SupportedResource[]> {
@@ -416,7 +422,7 @@ export class UserAccount extends DurableObject<Env> {
     return oauthNonce;
   }
 
-  async acceptAuthCode(code: string, oauthNonce: string): Promise<boolean> {
+  async acceptAuthCode(code: string, oauthNonce: string, baseUrl?: string): Promise<boolean> {
     const stored = this.ctx.storage.kv.get<StoredNonce>("nonce");
     if (!stored || stored.stage !== "oauth" || Date.now() >= stored.expiresAt
         || !constantTimeEqual(stored.value, oauthNonce)) {
@@ -435,7 +441,7 @@ export class UserAccount extends DurableObject<Env> {
       throw new Error("Took too long to complete authorization. Please try again.");
     }
 
-    const grant = await exchangeAuthCode(code, clientId, clientSecret, `${getBaseUrl(this.env)}/oauth`);
+    const grant = await exchangeAuthCode(code, clientId, clientSecret, `${baseUrl ?? getBaseUrl(this.env)}/oauth`);
     this.#storeGrant(grant.accessToken, grant.refreshToken, grant.expiresIn);
     this.ctx.storage.kv.put("expiredNotified", false);
 
@@ -655,7 +661,7 @@ export class GatekeeperUserImpl extends WorkerEntrypoint<Env, GatekeeperUserImpl
   async reconnect(): Promise<{ url: string }> {
     const initiationNonce = generateNonce();
     await this.#userAccount().prepareReconnect(initiationNonce);
-    return { url: `${getBaseUrl(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}` };
+    return { url: `${getBasePath(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}` };
   }
 
   // Mint a verifier representing this account, used by SupabaseGatekeeperImpl.addObserver to confirm

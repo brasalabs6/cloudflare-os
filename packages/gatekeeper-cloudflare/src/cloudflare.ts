@@ -75,6 +75,12 @@ function getBasePath(env: Env) {
   return path === "/" ? "" : path;
 }
 
+function getBaseUrlForRequest(req: Request, env: Env): string {
+  if (env.BASE_URL) return getBaseUrl(env);
+  const url = new URL(req.url);
+  return `${url.origin}${getBasePath(env)}`;
+}
+
 const SELF_CLOSING_HTML = `<!DOCTYPE html>
 <html lang="en"><body>
 <script type="text/javascript">window.close();</script>
@@ -117,7 +123,7 @@ export default {
       if (begun === null) {
         return new Response(INVALID_LINK_HTML, { headers: { "Content-Type": "text/html; charset=utf-8" } });
       }
-      const config = getOAuthConfig(env.CLIENT_ID, env.CLIENT_SECRET, getBaseUrl(env))!;
+      const config = getOAuthConfig(env.CLIENT_ID, env.CLIENT_SECRET, getBaseUrlForRequest(req, env))!;
       const authUrl = buildAuthorizeUrl(config, `${doId}:${begun.oauthNonce}`, begun.challenge, begun.scopes);
       return Response.redirect(authUrl, 302);
     } else if (relPath === "/oauth") {
@@ -135,7 +141,7 @@ export default {
       if (!code) return new Response("Error: no 'code' provided");
 
       const stub = ctx.exports.UserAccount.get(ctx.exports.UserAccount.idFromString(doId));
-      if (!await stub.acceptAuthCode(code, oauthNonce)) {
+      if (!await stub.acceptAuthCode(code, oauthNonce, getBaseUrlForRequest(req, env))) {
         return new Response(INVALID_LINK_HTML, { headers: { "Content-Type": "text/html; charset=utf-8" } });
       }
       return new Response(SELF_CLOSING_HTML, { headers: { "Content-Type": "text/html; charset=utf-8" } });
@@ -170,7 +176,7 @@ export class GatekeeperVendor extends WorkerEntrypoint<Env> implements Gatekeepe
     const scopes = authOnly ? AUTH_SCOPES : FULL_SCOPES;
     await this.ctx.exports.UserAccount.get(userObjectId)
         .setCallback(callback, initiationNonce, scopes, authOnly);
-    return { url: `${getBaseUrl(this.env)}/${userObjectId.toString()}/${initiationNonce}` };
+    return { url: `${getBasePath(this.env)}/${userObjectId.toString()}/${initiationNonce}` };
   }
 
   // No gadget/agent resource types yet — the Cloudflare gatekeeper currently provides auth only.
@@ -184,8 +190,8 @@ export class GatekeeperVendor extends WorkerEntrypoint<Env> implements Gatekeepe
 }
 
 export class UserAccount extends DurableObject<Env> {
-  #config() {
-    const config = getOAuthConfig(this.env.CLIENT_ID, this.env.CLIENT_SECRET, getBaseUrl(this.env));
+  #config(baseUrl?: string) {
+    const config = getOAuthConfig(this.env.CLIENT_ID, this.env.CLIENT_SECRET, baseUrl ?? getBaseUrl(this.env));
     if (!config) throw new Error("The Cloudflare Gatekeeper is not configured.");
     return config;
   }
@@ -236,7 +242,7 @@ export class UserAccount extends DurableObject<Env> {
     return { oauthNonce, challenge, scopes };
   }
 
-  async acceptAuthCode(code: string, oauthNonce: string): Promise<boolean> {
+  async acceptAuthCode(code: string, oauthNonce: string, baseUrl?: string): Promise<boolean> {
     const stored = this.ctx.storage.kv.get<StoredNonce>("nonce");
     if (!stored || stored.stage !== "oauth" || !stored.verifier ||
         Date.now() >= stored.expiresAt || !constantTimeEqual(stored.value, oauthNonce)) {
@@ -249,7 +255,7 @@ export class UserAccount extends DurableObject<Env> {
       throw new Error("Took too long to complete the authorization. Please try again.");
     }
 
-    const tokens = await exchangeCode(this.#config(), code, stored.verifier);
+    const tokens = await exchangeCode(this.#config(baseUrl), code, stored.verifier);
     if (!tokens || !tokens.refreshToken) {
       throw new Error("Cloudflare OAuth exchange failed or returned no refresh token.");
     }
@@ -387,7 +393,7 @@ export class GatekeeperUserImpl extends WorkerEntrypoint<Env, GatekeeperUserImpl
   async reconnect(): Promise<{ url: string }> {
     const initiationNonce = generateNonce();
     await this.#account().prepareReconnect(initiationNonce);
-    return { url: `${getBaseUrl(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}` };
+    return { url: `${getBasePath(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}` };
   }
 
   // Mint a verifier representing this account. The Cloudflare gatekeeper currently exposes no

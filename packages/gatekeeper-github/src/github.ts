@@ -364,6 +364,13 @@ function getBasePath(env: Env): string {
   return path === "/" ? "" : path;
 }
 
+function getBaseUrlForRequest(req: Request, env: Env): string {
+  if (env.BASE_URL) return getBaseUrl(env);
+  // Derive from the request URL when BASE_URL is not set (production safety net).
+  const url = new URL(req.url);
+  return `${url.origin}${getBasePath(env)}`;
+}
+
 function ensureConfigured(env: Env): void {
   if (!env.CLIENT_ID || !env.CLIENT_SECRET) {
     throw new Error("The GitHub gatekeeper is not configured.");
@@ -963,7 +970,7 @@ export default {
 
       const redirectUrl = new URL("https://github.com/login/oauth/authorize");
       redirectUrl.searchParams.set("client_id", env.CLIENT_ID);
-      redirectUrl.searchParams.set("redirect_uri", `${getBaseUrl(env)}/oauth`);
+      redirectUrl.searchParams.set("redirect_uri", `${getBaseUrlForRequest(req, env)}/oauth`);
       redirectUrl.searchParams.set("scope", begun.scopes.join(" "));
       redirectUrl.searchParams.set("state", `${doId}:${begun.oauthNonce}`);
 
@@ -992,7 +999,7 @@ export default {
       const stub: DurableObjectStub<UserAccount> = ctx.exports.UserAccount.get(
         ctx.exports.UserAccount.idFromString(doId),
       );
-      const accepted = await stub.acceptAuthCode(code, oauthNonce);
+      const accepted = await stub.acceptAuthCode(code, oauthNonce, getBaseUrlForRequest(req, env));
       if (!accepted) {
         return new Response(INVALID_LINK_HTML, {
           headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -1034,7 +1041,7 @@ export class GatekeeperVendor extends WorkerEntrypoint<Env> implements Gatekeepe
         .setCallback(callback, initiationNonce, scopes, authOnly);
 
     return {
-      url: `${getBaseUrl(this.env)}/${userObjectId.toString()}/${initiationNonce}`,
+      url: `${getBasePath(this.env)}/${userObjectId.toString()}/${initiationNonce}`,
     };
   }
 
@@ -1092,7 +1099,7 @@ export class UserAccount extends DurableObject<Env> {
     return { oauthNonce, scopes };
   }
 
-  async acceptAuthCode(code: string, oauthNonce: string): Promise<boolean> {
+  async acceptAuthCode(code: string, oauthNonce: string, baseUrl?: string): Promise<boolean> {
     const stored = this.ctx.storage.kv.get<StoredNonce>("nonce");
     if (!stored || stored.stage !== "oauth" || Date.now() >= stored.expiresAt || !constantTimeEqual(stored.value, oauthNonce)) {
       return false;
@@ -1111,7 +1118,7 @@ export class UserAccount extends DurableObject<Env> {
       throw new Error("Took too long to complete authorization. Please try again.");
     }
 
-    const grant = await exchangeAuthCode(code, clientId, clientSecret, `${getBaseUrl(this.env)}/oauth`);
+    const grant = await exchangeAuthCode(code, clientId, clientSecret, `${baseUrl ?? getBaseUrl(this.env)}/oauth`);
 
     this.ctx.storage.kv.put("accessToken", grant.accessToken);
     this.ctx.storage.kv.put("scopes", grant.scopes);
@@ -1316,7 +1323,7 @@ export class GatekeeperUserImpl extends WorkerEntrypoint<Env, GatekeeperUserImpl
     const initiationNonce = generateNonce();
     await this.ctx.exports.UserAccount.get(id).prepareReconnect(initiationNonce);
     return {
-      url: `${getBaseUrl(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}`,
+      url: `${getBasePath(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}`,
     };
   }
 

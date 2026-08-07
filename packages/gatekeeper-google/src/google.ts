@@ -169,6 +169,12 @@ function getBasePath(env: Env) {
   return path === "/" ? "" : path;
 }
 
+function getBaseUrlForRequest(req: Request, env: Env): string {
+  if (env.BASE_URL) return getBaseUrl(env);
+  const url = new URL(req.url);
+  return `${url.origin}${getBasePath(env)}`;
+}
+
 // =======================================================================================
 
 const SELF_CLOSING_HTML = `<!DOCTYPE html>
@@ -378,7 +384,7 @@ export default {
 
       let newUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
       newUrl.searchParams.set("client_id", env.CLIENT_ID);
-      newUrl.searchParams.set("redirect_uri", getBaseUrl(env) + "/oauth");
+      newUrl.searchParams.set("redirect_uri", getBaseUrlForRequest(req, env) + "/oauth");
       newUrl.searchParams.set("response_type", "code");
       newUrl.searchParams.set("scope", begun.scopes.join(" "));
       newUrl.searchParams.set("access_type", "offline");
@@ -408,7 +414,7 @@ export default {
 
       let userObjectId = ctx.exports.UserAccount.idFromString(doId);
       let stub: DurableObjectStub<UserAccount> = ctx.exports.UserAccount.get(userObjectId);
-      if (!await stub.acceptAuthCode(code, oauthNonce)) {
+      if (!await stub.acceptAuthCode(code, oauthNonce, getBaseUrlForRequest(req, env))) {
         return new Response(INVALID_LINK_HTML, {
           headers: { "Content-Type": "text/html; charset=utf-8" }
         });
@@ -462,7 +468,7 @@ export class GatekeeperVendor extends WorkerEntrypoint<Env> implements Gatekeepe
         .setCallback(callback, initiationNonce, requestedScopes, authOnly);
 
     return {
-      url: `${getBaseUrl(this.env)}/${userObjectId.toString()}/${initiationNonce}`
+      url: `${getBasePath(this.env)}/${userObjectId.toString()}/${initiationNonce}`
     };
   }
 
@@ -582,7 +588,7 @@ export class UserAccount extends DurableObject<Env> {
   }
 
   // Returns false if the OAuth nonce is invalid or expired.
-  async acceptAuthCode(code: string, oauthNonce: string): Promise<boolean> {
+  async acceptAuthCode(code: string, oauthNonce: string, baseUrl?: string): Promise<boolean> {
     // Verify and consume the OAuth nonce.
     let stored = this.ctx.storage.kv.get<StoredNonce>("nonce");
     if (!stored || stored.stage !== "oauth" ||
@@ -608,7 +614,7 @@ export class UserAccount extends DurableObject<Env> {
       }
 
       let response = await exchangeAuthCode(
-          code, clientId, clientSecret, getBaseUrl(this.env) + "/oauth",
+          code, clientId, clientSecret, (baseUrl ?? getBaseUrl(this.env)) + "/oauth",
           AbortSignal.timeout(AUTH_CODE_EXCHANGE_TIMEOUT_MS));
 
       if (!response.refreshToken) {
@@ -1014,7 +1020,7 @@ export class GatekeeperUserImpl extends WorkerEntrypoint<Env, GatekeeperUserImpl
     // Re-request the scopes already granted so a plain reconnect doesn't narrow access.
     let requestedScopes = resourceUrlPatternsToOAuthScopes(await obj.getGrantedResourceUrlPatterns());
     await obj.prepareReconnect(initiationNonce, requestedScopes);
-    return { url: `${getBaseUrl(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}` };
+    return { url: `${getBasePath(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}` };
   }
 
   async ensureResources(resourceUrlPatterns: string[]): Promise<{url?: string}> {
@@ -1031,7 +1037,7 @@ export class GatekeeperUserImpl extends WorkerEntrypoint<Env, GatekeeperUserImpl
     let requestedScopes = resourceUrlPatternsToOAuthScopes([...unionPatterns]);
     let initiationNonce = generateNonce();
     await obj.prepareReconnect(initiationNonce, requestedScopes);
-    return { url: `${getBaseUrl(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}` };
+    return { url: `${getBasePath(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}` };
   }
 
   // Mint a verifier representing this account, used by the Google gatekeepers' addObserver to confirm

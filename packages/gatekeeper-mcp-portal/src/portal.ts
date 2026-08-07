@@ -103,6 +103,22 @@ function getBaseUrl(env: Env): string {
   return stripTrailingSlashes(env.BASE_URL ?? "http://localhost:8787/gatekeeper/mcp-portal");
 }
 
+// Path component of the gatekeeper's public URL (e.g. "/gatekeeper/mcp-portal"). Used to build
+// relative URLs for connectAccount() so the browser resolves them against the current origin.
+function getBasePath(env: Env): string {
+  const path = new URL(getBaseUrl(env)).pathname;
+  return path === "/" ? "" : path;
+}
+
+// Derives the gatekeeper's public base URL from the incoming request when BASE_URL is not
+// set, instead of falling back to localhost:8787. This is a production safety net —
+// when BASE_URL is set (normal deployment), it takes precedence.
+function getBaseUrlForRequest(req: Request, env: Env): string {
+  if (env.BASE_URL) return getBaseUrl(env);
+  const url = new URL(req.url);
+  return `${url.origin}${getBasePath(env)}`;
+}
+
 async function fetchPortalServers(
   env: Env,
   account: DurableObjectStub<McpAccount>,
@@ -128,7 +144,7 @@ async function fetchPortalServers(
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     return handleMcpHttpRequest(req, {
-      baseUrl: getBaseUrl(env),
+      baseUrl: getBaseUrlForRequest(req, env),
       accountForId: id => ctx.exports.McpAccount.get(
         ctx.exports.McpAccount.idFromString(id)),
       log: logger,
@@ -196,7 +212,7 @@ export class GatekeeperVendor extends WorkerEntrypoint<Env> implements Gatekeepe
     const accountId = this.ctx.exports.McpAccount.newUniqueId();
     const initiationNonce = generateNonce();
     await this.ctx.exports.McpAccount.get(accountId).setCallback(callback, initiationNonce);
-    return { url: `${getBaseUrl(this.env)}/${accountId.toString()}/${initiationNonce}` };
+    return { url: `${getBasePath(this.env)}/${accountId.toString()}/${initiationNonce}` };
   }
 
   // The one resource this connector offers, or none when unconfigured. Returning nothing is how the

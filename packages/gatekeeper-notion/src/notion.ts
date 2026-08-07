@@ -131,6 +131,12 @@ function getBasePath(env: Env): string {
   return path === "/" ? "" : path;
 }
 
+function getBaseUrlForRequest(req: Request, env: Env): string {
+  if (env.BASE_URL) return getBaseUrl(env);
+  const url = new URL(req.url);
+  return `${url.origin}${getBasePath(env)}`;
+}
+
 function hexEncode(bytes: Uint8Array): string {
   return [...bytes].map(b => b.toString(16).padStart(2, "0")).join("");
 }
@@ -245,7 +251,7 @@ export default {
 
       const authUrl = new URL("https://api.notion.com/v1/oauth/authorize");
       authUrl.searchParams.set("client_id", env.CLIENT_ID);
-      authUrl.searchParams.set("redirect_uri", getBaseUrl(env) + "/oauth");
+      authUrl.searchParams.set("redirect_uri", getBaseUrlForRequest(req, env) + "/oauth");
       authUrl.searchParams.set("response_type", "code");
       authUrl.searchParams.set("owner", "user");
       authUrl.searchParams.set("state", `${doId}:${begun.oauthNonce}`);
@@ -269,7 +275,7 @@ export default {
       if (!code) return new Response("Error: no 'code' provided");
 
       const stub = ctx.exports.UserAccount.get(ctx.exports.UserAccount.idFromString(doId));
-      if (!await stub.acceptAuthCode(code, oauthNonce)) {
+      if (!await stub.acceptAuthCode(code, oauthNonce, getBaseUrlForRequest(req, env))) {
         return new Response(INVALID_LINK_HTML, {
           headers: { "Content-Type": "text/html; charset=utf-8" },
         });
@@ -306,7 +312,7 @@ export class GatekeeperVendor extends WorkerEntrypoint<Env> implements Gatekeepe
     const userObjectId = this.ctx.exports.UserAccount.newUniqueId();
     const initiationNonce = generateNonce();
     await this.ctx.exports.UserAccount.get(userObjectId).setCallback(callback, initiationNonce);
-    return { url: `${getBaseUrl(this.env)}/${userObjectId.toString()}/${initiationNonce}` };
+    return { url: `${getBasePath(this.env)}/${userObjectId.toString()}/${initiationNonce}` };
   }
 
   async getSupportedResources(): Promise<SupportedResource[]> {
@@ -362,7 +368,7 @@ export class UserAccount extends DurableObject<Env> {
   }
 
   // Exchange the auth code for tokens. Returns false if the OAuth nonce is invalid/expired.
-  async acceptAuthCode(code: string, oauthNonce: string): Promise<boolean> {
+  async acceptAuthCode(code: string, oauthNonce: string, baseUrl?: string): Promise<boolean> {
     const stored = this.ctx.storage.kv.get<StoredNonce>("nonce");
     if (!stored || stored.stage !== "oauth" ||
         Date.now() >= stored.expiresAt || !constantTimeEqual(stored.value, oauthNonce)) {
@@ -380,7 +386,7 @@ export class UserAccount extends DurableObject<Env> {
     }
 
     const grant = await exchangeAuthCode(
-        code, this.env.CLIENT_ID, this.env.CLIENT_SECRET, getBaseUrl(this.env) + "/oauth");
+        code, this.env.CLIENT_ID, this.env.CLIENT_SECRET, (baseUrl ?? getBaseUrl(this.env)) + "/oauth");
 
     this.#storeGrant(grant);
 
@@ -556,7 +562,7 @@ export class GatekeeperUserImpl extends WorkerEntrypoint<Env, GatekeeperUserImpl
   async reconnect(): Promise<{ url: string }> {
     const initiationNonce = generateNonce();
     await this.#userAccount().prepareReconnect(initiationNonce);
-    return { url: `${getBaseUrl(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}` };
+    return { url: `${getBasePath(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}` };
   }
 
   // Mint a verifier representing this account, used by the Notion gatekeepers' addObserver to confirm

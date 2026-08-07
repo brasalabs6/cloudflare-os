@@ -73,6 +73,15 @@ function getBasePath(env: Env) {
   return path === "/" ? "" : path;
 }
 
+// Derives the gatekeeper's public base URL from the incoming request when BASE_URL is not
+// set, instead of falling back to localhost:8787. This is a production safety net —
+// when BASE_URL is set (normal deployment), it takes precedence.
+function getBaseUrlForRequest(req: Request, env: Env): string {
+  if (env.BASE_URL) return getBaseUrl(env);
+  const url = new URL(req.url);
+  return `${url.origin}${getBasePath(env)}`;
+}
+
 function getEmailMailboxResource(env: Env): SupportedResource {
   return {
     urlPattern: `${getBaseUrl(env)}/mailbox/:user`,
@@ -278,7 +287,7 @@ export class GatekeeperVendor extends WorkerEntrypoint<Env> implements Gatekeepe
     await this.ctx.exports.UserAccount.get(userObjectId).setCallback(callback, nonce);
 
     return {
-      url: `${getBaseUrl(this.env)}/${userObjectId.toString()}/${nonce}`
+      url: `${getBasePath(this.env)}/${userObjectId.toString()}/${nonce}`
     };
   }
 

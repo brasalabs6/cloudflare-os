@@ -133,6 +133,11 @@ type StoredGrant = { accessToken: string; refreshToken?: string; expiresAt: numb
 
 const getBaseUrl = (env: Env): string => env.BASE_URL || "http://localhost:8787/gatekeeper/confluence";
 const getBasePath = (env: Env): string => new URL(getBaseUrl(env)).pathname;
+const getBaseUrlForRequest = (req: Request, env: Env): string => {
+  if (env.BASE_URL) return getBaseUrl(env);
+  const url = new URL(req.url);
+  return `${url.origin}${getBasePath(env)}`;
+};
 
 const hexEncode = (bytes: Uint8Array): string =>
   [...bytes].map(b => b.toString(16).padStart(2, "0")).join("");
@@ -208,7 +213,7 @@ export default {
       authUrl.searchParams.set("audience", "api.atlassian.com");
       authUrl.searchParams.set("client_id", env.CLIENT_ID);
       authUrl.searchParams.set("scope", CONFLUENCE_SCOPES.join(" "));
-      authUrl.searchParams.set("redirect_uri", getBaseUrl(env) + "/oauth");
+      authUrl.searchParams.set("redirect_uri", getBaseUrlForRequest(req, env) + "/oauth");
       authUrl.searchParams.set("state", `${path[0]}:${begun.oauthNonce}`);
       authUrl.searchParams.set("response_type", "code");
       authUrl.searchParams.set("prompt", "consent");
@@ -225,7 +230,7 @@ export default {
       if (colonIdx < 0) return new Response("Error: malformed state",
         { headers: { "content-type": "text/plain; charset=utf-8" } });
       const stub = ctx.exports.UserAccount.get(ctx.exports.UserAccount.idFromString(state.slice(0, colonIdx)));
-      if (!await stub.acceptAuthCode(code, state.slice(colonIdx + 1))) return htmlResponse(INVALID_LINK_HTML);
+      if (!await stub.acceptAuthCode(code, state.slice(colonIdx + 1), getBaseUrlForRequest(req, env))) return htmlResponse(INVALID_LINK_HTML);
       return htmlResponse(SELF_CLOSING_HTML);
     }
     return new Response("Not Found", { status: 404 });
@@ -257,7 +262,7 @@ export class GatekeeperVendor extends WorkerEntrypoint<Env> implements Gatekeepe
     const userObjectId = this.ctx.exports.UserAccount.newUniqueId();
     const initiationNonce = generateNonce();
     await this.ctx.exports.UserAccount.get(userObjectId).setCallback(callback, initiationNonce);
-    return { url: `${getBaseUrl(this.env)}/${userObjectId.toString()}/${initiationNonce}` };
+    return { url: `${getBasePath(this.env)}/${userObjectId.toString()}/${initiationNonce}` };
   }
 
   async getSupportedResources(): Promise<SupportedResource[]> {
@@ -303,7 +308,7 @@ export class UserAccount extends DurableObject<Env> {
     return { oauthNonce };
   }
 
-  async acceptAuthCode(code: string, oauthNonce: string): Promise<boolean> {
+  async acceptAuthCode(code: string, oauthNonce: string, baseUrl?: string): Promise<boolean> {
     const stored = this.ctx.storage.kv.get<StoredNonce>("nonce");
     if (!stored || stored.stage !== "oauth" || Date.now() >= stored.expiresAt ||
         !constantTimeEqual(stored.value, oauthNonce)) {
@@ -318,7 +323,7 @@ export class UserAccount extends DurableObject<Env> {
     if (!callback) throw new Error("Took too long to complete the authorization. Please try again.");
 
     const grant = await exchangeAuthCode(
-      code, this.env.CLIENT_ID, this.env.CLIENT_SECRET, getBaseUrl(this.env) + "/oauth");
+      code, this.env.CLIENT_ID, this.env.CLIENT_SECRET, (baseUrl ?? getBaseUrl(this.env)) + "/oauth");
     this.#storeGrant(grant);
     await this.#refreshSitesAndIdentity(grant.accessToken);
 
@@ -497,7 +502,7 @@ export class GatekeeperUserImpl extends WorkerEntrypoint<Env, GatekeeperUserImpl
   async reconnect(): Promise<{ url: string }> {
     const initiationNonce = generateNonce();
     await this.#userAccount().prepareReconnect(initiationNonce);
-    return { url: `${getBaseUrl(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}` };
+    return { url: `${getBasePath(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}` };
   }
 
   @skipRpcValidation()

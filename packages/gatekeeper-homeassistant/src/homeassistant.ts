@@ -113,6 +113,12 @@ function getBasePath(env: Env): string {
   return path === "/" ? "" : path;
 }
 
+function getBaseUrlForRequest(req: Request, env: Env): string {
+  if (env.BASE_URL) return getBaseUrl(env);
+  const url = new URL(req.url);
+  return `${url.origin}${getBasePath(env)}`;
+}
+
 // ---------------------------------------------------------------------------
 // Resource descriptors
 
@@ -281,6 +287,7 @@ export default {
     if (path.length === 2 && path[0].length === 64 && path[1].length === NONCE_BYTES * 2) {
       const doId = path[0];
       const nonce = path[1];
+      const connectUrl = `${getBaseUrlForRequest(req, env)}/${doId}/${nonce}`;
       const stub = ctx.exports.UserAccount.get(ctx.exports.UserAccount.idFromString(doId));
 
       if (req.method === "GET") {
@@ -290,7 +297,7 @@ export default {
             headers: { "Content-Type": "text/html; charset=utf-8" },
           });
         }
-        return new Response(CONNECT_FORM_HTML({ actionUrl: req.url }), {
+        return new Response(CONNECT_FORM_HTML({ actionUrl: connectUrl }), {
           headers: { "Content-Type": "text/html; charset=utf-8" },
         });
       }
@@ -306,7 +313,7 @@ export default {
         const tokenInput = String(formData.get("token") ?? "").trim();
         if (!baseUrlInput || !tokenInput) {
           return new Response(
-            CONNECT_FORM_HTML({ actionUrl: req.url, error: "Both URL and token are required." }),
+            CONNECT_FORM_HTML({ actionUrl: connectUrl, error: "Both URL and token are required." }),
             { headers: { "Content-Type": "text/html; charset=utf-8" }, status: 400 },
           );
         }
@@ -322,7 +329,7 @@ export default {
           normalizedUrl = `${u.protocol}//${u.host}${stripTrailingSlashes(u.pathname)}`;
         } catch (e: any) {
           return new Response(
-            CONNECT_FORM_HTML({ actionUrl: req.url, error: `Invalid URL: ${e.message}` }),
+            CONNECT_FORM_HTML({ actionUrl: connectUrl, error: `Invalid URL: ${e.message}` }),
             { headers: { "Content-Type": "text/html; charset=utf-8" }, status: 400 },
           );
         }
@@ -335,7 +342,7 @@ export default {
         }
         if (result.kind === "error") {
           return new Response(
-            CONNECT_FORM_HTML({ actionUrl: req.url, error: result.message }),
+            CONNECT_FORM_HTML({ actionUrl: connectUrl, error: result.message }),
             { headers: { "Content-Type": "text/html; charset=utf-8" }, status: 400 },
           );
         }
@@ -371,7 +378,7 @@ export class GatekeeperVendor extends WorkerEntrypoint<Env> implements Gatekeepe
     const userObjectId = this.ctx.exports.UserAccount.newUniqueId();
     const nonce = generateNonce();
     await this.ctx.exports.UserAccount.get(userObjectId).setCallback(callback, nonce);
-    return { url: `${getBaseUrl(this.env)}/${userObjectId.toString()}/${nonce}` };
+    return { url: `${getBasePath(this.env)}/${userObjectId.toString()}/${nonce}` };
   }
 
   async getSupportedResources(): Promise<SupportedResource[]> {
@@ -679,7 +686,7 @@ export class HomeAssistantUserImpl
     const id = this.ctx.exports.UserAccount.idFromString(this.ctx.props.userObjectId);
     const nonce = generateNonce();
     await this.ctx.exports.UserAccount.get(id).prepareReconnect(nonce);
-    return { url: `${getBaseUrl(this.env)}/${this.ctx.props.userObjectId}/${nonce}` };
+    return { url: `${getBasePath(this.env)}/${this.ctx.props.userObjectId}/${nonce}` };
   }
 
   async ensureResources(_resourceUrlPatterns: string[]): Promise<{url?: string}> {

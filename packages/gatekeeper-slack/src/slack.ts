@@ -71,6 +71,12 @@ function getBasePath(env: Env) {
   return path === "/" ? "" : path;
 }
 
+function getBaseUrlForRequest(req: Request, env: Env): string {
+  if (env.BASE_URL) return getBaseUrl(env);
+  const url = new URL(req.url);
+  return `${url.origin}${getBasePath(env)}`;
+}
+
 // ── Limits ──────────────────────────────────────────────────────────
 
 const HISTORY_PAGE_SIZE = 50;
@@ -243,7 +249,7 @@ export default {
 
       let authUrl = new URL("https://slack.com/oauth/v2/authorize");
       authUrl.searchParams.set("client_id", env.CLIENT_ID);
-      authUrl.searchParams.set("redirect_uri", getBaseUrl(env) + "/oauth");
+      authUrl.searchParams.set("redirect_uri", getBaseUrlForRequest(req, env) + "/oauth");
       // User scopes produce the read-only user token needed for private channels and DMs.
       authUrl.searchParams.set("user_scope", begun.scopes.join(","));
       authUrl.searchParams.set("state", `${doId}:${begun.oauthNonce}`);
@@ -263,7 +269,7 @@ export default {
       if (!code) return new Response("Error: no 'code' provided");
 
       let stub = ctx.exports.UserAccount.get(ctx.exports.UserAccount.idFromString(doId));
-      if (!await stub.acceptAuthCode(code, oauthNonce)) {
+      if (!await stub.acceptAuthCode(code, oauthNonce, getBaseUrlForRequest(req, env))) {
         return new Response(INVALID_LINK_HTML,
             { headers: { "Content-Type": "text/html; charset=utf-8" } });
       }
@@ -300,7 +306,7 @@ export class GatekeeperVendor extends WorkerEntrypoint<Env> implements Gatekeepe
     let requestedScopes = resourceUrlPatternsToScopes(options?.resourceUrlPatterns);
     await this.ctx.exports.UserAccount.get(userObjectId)
         .setCallback(callback, initiationNonce, requestedScopes);
-    return { url: `${getBaseUrl(this.env)}/${userObjectId.toString()}/${initiationNonce}` };
+    return { url: `${getBasePath(this.env)}/${userObjectId.toString()}/${initiationNonce}` };
   }
 
   async getSupportedResources(): Promise<SupportedResource[]> {
@@ -381,7 +387,7 @@ export class UserAccount extends DurableObject<Env> {
     return { oauthNonce, scopes };
   }
 
-  async acceptAuthCode(code: string, oauthNonce: string): Promise<boolean> {
+  async acceptAuthCode(code: string, oauthNonce: string, baseUrl?: string): Promise<boolean> {
     let stored = this.ctx.storage.kv.get<StoredNonce>("nonce");
     if (!stored || stored.stage !== "oauth" ||
         Date.now() >= stored.expiresAt || !constantTimeEqual(stored.value, oauthNonce)) {
@@ -401,7 +407,7 @@ export class UserAccount extends DurableObject<Env> {
       }
 
       let grant = await exchangeAuthCode(
-          code, this.env.CLIENT_ID, this.env.CLIENT_SECRET, getBaseUrl(this.env) + "/oauth");
+          code, this.env.CLIENT_ID, this.env.CLIENT_SECRET, (baseUrl ?? getBaseUrl(this.env)) + "/oauth");
 
       this.ctx.storage.kv.put<SlackAccessToken>("accessToken", grant.accessToken);
       if (grant.refreshToken) this.ctx.storage.kv.put<string>("refreshToken", grant.refreshToken);
@@ -629,7 +635,7 @@ export class SlackUserImpl extends WorkerEntrypoint<Env, SlackUserImplProps>
     let initiationNonce = generateNonce();
     let requestedScopes = resourceUrlPatternsToScopes(await account.getGrantedResourceUrlPatterns());
     await account.prepareReconnect(initiationNonce, requestedScopes);
-    return { url: `${getBaseUrl(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}` };
+    return { url: `${getBasePath(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}` };
   }
 
   async ensureResources(resourceUrlPatterns: string[]): Promise<{ url?: string }> {
@@ -641,7 +647,7 @@ export class SlackUserImpl extends WorkerEntrypoint<Env, SlackUserImplProps>
     let requestedScopes = resourceUrlPatternsToScopes([...union]);
     let initiationNonce = generateNonce();
     await account.prepareReconnect(initiationNonce, requestedScopes);
-    return { url: `${getBaseUrl(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}` };
+    return { url: `${getBasePath(this.env)}/${this.ctx.props.userObjectId}/${initiationNonce}` };
   }
 
   async revoke(): Promise<void> {
