@@ -49,6 +49,13 @@ import { renderGadgetPdf } from "./browser-export";
 const logger = createWorkshopLogger("workshop.overseer");
 export const AGENT_RUNNING_ERROR_MESSAGE = "Agent is running, wait for it to finish.";
 
+/**
+ * Error thrown when the Computer bridge returns a structured error response.
+ * Re-exported from computer-bridge-utils.ts for backwards compatibility.
+ */
+import { ComputerBridgeError, parseComputerCommandResponse } from "./computer-bridge-utils.js";
+export { ComputerBridgeError };
+
 let CODE_MODE_HARNESS =
 `import { WorkerEntrypoint, restore, RpcStub, RpcTarget } from "cloudflare:workers";
 import agent from "agent.js";
@@ -3867,6 +3874,7 @@ class OverseerImpl implements AgentHooks {
     this.storage.computerBootConfig.put(config);
   }
 
+
   /** Creates a fresh Computer run state for a chat, or reuses an existing paused/idle one. */
   #createComputerRunState(chatId: number): ComputerRunStatus {
     const existing = this.storage.computerRuns.get(`computerRun.${chatId}`);
@@ -3986,7 +3994,16 @@ class OverseerImpl implements AgentHooks {
 
     if (!response.ok || !response.body) {
       const text = await response.text();
-      throw new Error(`Bridge error: ${response.status} ${text}`);
+      // Parse the bridge's structured error response to extract the typed
+      // error code. The bridge returns { error, errorType, recoverable }.
+      let errorCode = "bridge_error";
+      let errorMessage = `Bridge error: ${response.status} ${text}`;
+      try {
+        const parsed = JSON.parse(text) as { error?: string; errorType?: string };
+        if (parsed.errorType) errorCode = parsed.errorType;
+        if (parsed.error) errorMessage = parsed.error;
+      } catch { /* not JSON, use raw text */ }
+      throw new ComputerBridgeError(errorMessage, errorCode);
     }
 
     // Parse the SSE stream and emit AiChatStreamEvent for each bridge event.
@@ -4008,6 +4025,17 @@ class OverseerImpl implements AgentHooks {
         const data = line.slice(6);
         try {
           const event = JSON.parse(data) as { type: string; data: any };
+          // Forward bridge "error" events as computerStatus with error code.
+          if (event.type === "error") {
+            const errorCode = event.data?.errorType ?? "rpc_timeout";
+            const errorMsg = event.data?.message ?? "Unknown bridge error";
+            this.#emitStreamEvent(chatId, {
+              type: "computerStatus",
+              status: "error",
+              code: errorCode,
+            });
+            throw new ComputerBridgeError(errorMsg, errorCode);
+          }
           const streamEvent = this.#transformBridgeEvent(event);
           if (streamEvent) {
             this.#emitStreamEvent(chatId, streamEvent);
@@ -4217,15 +4245,23 @@ class OverseerImpl implements AgentHooks {
         event: "computer.agent.run.failed",
         error: err,
       });
-      // Persist error state
+      // Extract typed error code from ComputerBridgeError, or use a generic code.
+      const errorCode = err instanceof ComputerBridgeError
+        ? err.code
+        : "computer_error";
+      const errorMessage = err instanceof ComputerBridgeError
+        ? err.message
+        : String(err);
+      // Persist error state with typed code.
       const existing = this.storage.computerRuns.get(`computerRun.${chatId}`);
       if (existing) {
         existing.status = "error";
-        existing.error = String(err);
+        existing.error = errorMessage;
+        existing.code = errorCode;
         this.#saveComputerRunState(existing);
       }
-      this.#emitStreamEvent(chatId, { type: "computerStatus", status: "error" });
-      this.postAgentErrorMessage(chatId, aiModel.profile, String(err), "computer_error");
+      this.#emitStreamEvent(chatId, { type: "computerStatus", status: "error", code: errorCode });
+      this.postAgentErrorMessage(chatId, aiModel.profile, errorMessage, errorCode);
     } finally {
       this.#unregisterRunningAgent(chatId);
     }
@@ -9026,6 +9062,7 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
     stdout: string;
     stderr: string;
     exitCode: number;
+    errorType?: string;
   }> {
     if (!this.impl.env.GROK_COMPUTER_BRIDGE) {
       throw new Error("Grok Computer bridge is not configured.");
@@ -9044,7 +9081,8 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
         body: JSON.stringify({ command }),
       },
     );
-    return response.json();
+
+    return parseComputerCommandResponse(response);
   }
 
   async finalizeChatDraft(chatId: number): Promise<void> {
@@ -9515,7 +9553,7 @@ class UseOverseerInterface extends RpcTarget implements Overseer {
   async pauseComputerRun(): Promise<void> { this.#deny(); }
   async resumeComputerRun(): Promise<void> { this.#deny(); }
   async stopComputerRun(): Promise<void> { this.#deny(); }
-  async sendComputerCommand(_command: string): Promise<{stdout: string; stderr: string; exitCode: number}> { this.#deny(); }
+  async sendComputerCommand(_command: string): Promise<{stdout: string; stderr: string; exitCode: number; errorType?: string}> { this.#deny(); }
   async subscribeToConsoleLogs(_subscriber: RpcStub<ConsoleLogSubscriber>): Promise<RpcStub<{}>> {
     // Inert: "use" sessions never receive console logs. The inbound subscriber stub is left
     // undup'd, so the RPC system disposes it when this call returns.

@@ -1101,6 +1101,8 @@ export type ComputerRunStatus = {
   lastOutputPreview: string;
   /** Error message if status is "error". */
   error?: string;
+  /** Typed error code from the bridge (e.g. "container_not_ready", "grok_agent_not_running", "boot_failed"). */
+  code?: string;
   /** Current grok session ID inside the container. */
   grokSessionId?: string;
   /** Whether the container is currently alive. */
@@ -1849,6 +1851,7 @@ export interface Overseer extends RpcTarget {
     stdout: string;
     stderr: string;
     exitCode: number;
+    errorType?: string;
   }>;
 }
 
@@ -2515,6 +2518,8 @@ export type AiChatStreamEvent = {
   // Computer agent run status changed.
   type: "computerStatus";
   status: ComputerRunStatus["status"];
+  /** Typed error code when status is "error" (e.g. "container_not_ready", "grok_agent_not_running"). */
+  code?: string;
 };
 
 // Interface implemented by the client to receive action-log upserts.
