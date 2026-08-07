@@ -128,6 +128,12 @@ function catalogModel(provider: AiModelConfig["provider"], modelId: string): Mod
       // The proxy fronts Cloudflare Workers AI, so reuse its catalog for cost/compat metadata.
       // Virtual models (e.g. "glm-5.2-cyber") have no catalog entry and synthesize with zero cost.
       return (CLOUDFLARE_WORKERS_AI_MODELS as Record<string, Model<Api>>)[modelId];
+    case "grok-computer":
+      // The Computer agent runs Grok Build inside a Cloudflare Computer container; it has no
+      // pi catalog entry. The Overseer branches to #runComputerAgentTurn() before reaching
+      // runAgent(), so this catalog entry is never used for streaming — but modelTokenWindow()
+      // still reads it for compaction budget sizing.
+      return undefined;
     default: return undefined;
   }
 }
@@ -632,6 +638,27 @@ function getModelDirect(config: AiModelConfig, sessionAffinity?: string): ModelH
           compat: workersAiCompat(catalog),
         },
         apiKey: config.apiToken,
+        sessionAffinity,
+      });
+    }
+    case "grok-computer": {
+      // The Computer agent doesn't use pi's streaming model interface. Instead,
+      // OverseerImpl.#runAgentTurnWithContext() branches to #runComputerAgentTurn() before
+      // reaching runAgent(). This handle exists only so getModel() doesn't throw before the
+      // branch is taken; if someone calls stream() directly, they get a clear error.
+      return makeHandle({
+        model: {
+          id: config.model,
+          name: "Grok Computer",
+          api: "openai-completions",
+          provider: "cloudflare-workers-ai",
+          baseUrl: "unused",
+          reasoning: false,
+          input: ["text"],
+          cost: ZERO_COST,
+          ...window,
+        },
+        apiKey: "unused",
         sessionAffinity,
       });
     }

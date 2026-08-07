@@ -92,6 +92,19 @@ declare global {
       CF_PROXY_DEFAULT_API_KEY?: string;      // Proxy Bearer token (secret)
       CF_PROXY_DEFAULT_DISPLAY_NAME?: string; // Optional display name override
       MINIMUM_CLOUDFLARE_BALANCE?: string;
+
+      // ── Grok Computer Bridge ──────────────────────────────────────────────
+      //
+      // Service binding to the grok-computer-bridge Worker. When present, models with
+      // provider "grok-computer" route chat prompts to a Grok Build agent running inside
+      // a Cloudflare Computer container. The binding provides fetch() and url for HTTP
+      // communication with the bridge.
+      GROK_COMPUTER_BRIDGE?: Fetcher;
+
+      // Bearer token for authenticating requests to the grok-computer-bridge. Must match
+      // BRIDGE_API_KEY set on the bridge side. Optional in dev (bridge accepts all requests
+      // when its key is empty).
+      GROK_BRIDGE_API_KEY?: string;
     }
   }
 }

@@ -41,6 +41,9 @@ const ATTACHMENT_SUPPORT_BY_PROVIDER = {
   // cf-proxy fronts Cloudflare Workers AI, whose chat endpoint has no document input —
   // same constraint as the "cloudflare" provider.
   "cf-proxy": isTextOrImageMime,
+  // grok-computer routes chat to a Grok Build agent inside a Cloudflare Computer; the bridge
+  // only accepts text prompts, not file attachments.
+  "grok-computer": isTextOrImageMime,
 } satisfies Record<AiModelProvider, (mimeType: string) => boolean>;
 
 function sanitizeChatAttachmentMimeType(mimeType: string | undefined): string {

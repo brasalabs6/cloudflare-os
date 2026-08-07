@@ -81,6 +81,8 @@ import {
   BlueprintOutput,
   MessageFormatRef,
   OutputFormatOffer,
+  ComputerBootConfig,
+  ComputerRunStatus,
 } from "@gadgets/workshop-shared/api";
 import { ActionKind, ResourceDescription } from "@gadgets/workshop-shared/gatekeeper";
 import {
@@ -107,6 +109,9 @@ import ComposerFormatMenuItems from "./components/format/ComposerFormatMenuItems
 import { HookToggle } from "./components/HookToggle";
 import { handlePickerKeyDown } from "./pickerNavigation";
 import { normalizeResourceUrl } from "./resourceMatching";
+import { ComputerRunPanel } from "./components/chat/ComputerRunPanel";
+import { ComputerBootConfigModal } from "./components/chat/ComputerBootConfigModal";
+import { Gear } from "@phosphor-icons/react";
 import DeleteConfirmationDialog from "./components/DeleteConfirmationDialog";
 import AutoApproveConfirmDialog from "./components/AutoApproveConfirmDialog";
 import { AlwaysApproveButton, ResolveButton } from "./components/ResolveButton";
@@ -4322,6 +4327,56 @@ function ChatInterface({
     [],
   );
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
+
+  // ── Computer agent state ──────────────────────────────────────────────────
+  // When the selected model is a "grok-computer" model, these track the boot
+  // configuration and run status for the Cloudflare Computer container.
+  const [computerRunStatus, setComputerRunStatus] = useState<ComputerRunStatus | null>(null);
+  const [bootConfigOpen, setBootConfigOpen] = useState(false);
+  const [bootConfig, setBootConfig] = useState<ComputerBootConfig | null>(null);
+  const isComputerModel = selectedModel === 'grok-computer-default';
+
+  // Poll run status every 5s while the Computer model is active.
+  useEffect(() => {
+    if (!isComputerModel || !overseer) return;
+    const poll = async () => {
+      try {
+        const status = await overseer.getComputerRunStatus();
+        setComputerRunStatus(status);
+      } catch { /* ignore */ }
+    };
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, [isComputerModel, overseer]);
+
+  // Load boot config when computer model is selected.
+  useEffect(() => {
+    if (!isComputerModel || !overseer) return;
+    overseer.getComputerBootConfig().then(setBootConfig).catch(() => {});
+  }, [isComputerModel, overseer]);
+
+  // Handle Computer stream events (called from the main stream handler).
+  const handleComputerStreamEvent = useCallback((event: AiChatStreamEvent) => {
+    switch (event.type) {
+      case 'computerBooting':
+        setComputerRunStatus(prev => prev ? { ...prev, status: 'booting' } : null);
+        break;
+      case 'computerBooted':
+        setComputerRunStatus(prev => prev
+          ? { ...prev, status: 'running', grokSessionId: event.grokSessionId }
+          : null);
+        break;
+      case 'computerLoopEnd':
+        setComputerRunStatus(prev => prev
+          ? { ...prev, loopCount: event.iteration, lastActiveAt: new Date() }
+          : null);
+        break;
+      case 'computerStatus':
+        setComputerRunStatus(prev => prev ? { ...prev, status: event.status } : null);
+        break;
+    }
+  }, []);
   const [sidebarActiveTab, setSidebarActiveTab] = useState<
     "chat" | "connections"
   >("chat");
@@ -4412,6 +4467,11 @@ function ChatInterface({
   // render that created it, and the toast manager is a fresh object each render.
   const toastsRef = useRef(toasts);
   toastsRef.current = toasts;
+
+  // Ref for handleComputerStreamEvent so the chat subscriber can call it without capturing
+  // a stale closure.
+  const handleComputerStreamEventRef = useRef<typeof handleComputerStreamEvent | null>(null);
+  handleComputerStreamEventRef.current = handleComputerStreamEvent;
 
   // Refetches a loaded chat's newest page. Held in a ref because the chat subscriber is constructed
   // once, while `overseer` and `cacheHistoryPage` are recreated each render.
@@ -5157,6 +5217,16 @@ function ChatInterface({
           break;
         case "codeUpdate":
           provisional.codeUpdates.push(event.update);
+          break;
+        // ── Computer agent stream events ─────────────────────────────────
+        // These don't modify provisional chat state — they update the
+        // ComputerRunPanel via handleComputerStreamEvent instead.
+        case "computerBooting":
+        case "computerBooted":
+        case "computerLoopStart":
+        case "computerLoopEnd":
+        case "computerStatus":
+          handleComputerStreamEventRef.current?.(event);
           break;
       }
 
@@ -6800,6 +6870,30 @@ function ChatInterface({
                       </div>
                     )}
 
+                    {/* ── Computer agent panel ─────────────────────────────── */}
+                    {/* Shows run status and controls when a grok-computer model is active. */}
+                    {isComputerModel && (
+                      <div className="mb-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <button
+                            onClick={() => setBootConfigOpen(true)}
+                            className="flex items-center gap-1 text-[12px] text-kumo-inactive hover:text-kumo-text transition-colors"
+                            title="Configure Computer boot"
+                          >
+                            <Gear size={14} />
+                            Boot Config
+                          </button>
+                        </div>
+                        <ComputerRunPanel
+                          runStatus={computerRunStatus}
+                          onPause={() => overseer?.pauseComputerRun().catch(() => {})}
+                          onResume={() => overseer?.resumeComputerRun().catch(() => {})}
+                          onStop={() => overseer?.stopComputerRun().catch(() => {})}
+                          onReset={() => overseer?.stopComputerRun().catch(() => {})}
+                        />
+                      </div>
+                    )}
+
                     {displayEntries.map((entry, entryIndex) => {
                       const entryTopClass = entryTopClasses[entryIndex] ?? "";
                       if (entry.type === "compactionCut") {
@@ -7725,6 +7819,18 @@ function ChatInterface({
         open={usageModalOpen}
         onClose={() => setUsageModalOpen(false)}
       />
+      {/* Computer boot configuration modal */}
+      {bootConfig && (
+        <ComputerBootConfigModal
+          open={bootConfigOpen}
+          onClose={() => setBootConfigOpen(false)}
+          config={bootConfig}
+          onSave={async (newConfig) => {
+            await overseer?.setComputerBootConfig(newConfig);
+            setBootConfig(newConfig);
+          }}
+        />
+      )}
     </div>
   );
 }

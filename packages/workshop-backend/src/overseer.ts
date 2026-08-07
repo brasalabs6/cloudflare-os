@@ -1,6 +1,6 @@
 import { RpcCompatible, RpcStub, RpcTarget } from "capnweb";
 import { validateRpc } from "capnweb-validate";
-import { Overseer, GadgetMetadata, UiBundle, WorkpieceId, WorkpieceSummary, WorkpiecesSubscriber, GadgetClient, GadgetBindingInfo, GatekeeperClient, ActionState, ActionLogEntry, ActionsSubscriber, CodeUpdate, CodeSubscriber, AiChatMetadata, AiChatMessage, AiChatHistoryPage, AiChatSubscriber, AiChatAuthorInfo, AiModelConfig, AiChatMessageBody, AgentSpawnerConfig, ConsoleLogSubscriber, ConsoleLogEvent, CapsuleSpecifier, CollaboratorInfo, CollaboratorRole, AffectedCollaborator, ShareLinkInfo, GatekeeperCreationSpec, ObserverConfigCallback, ObserverBindingNeed, ObserverBindingFailure, BlueprintBindingAnnotation, BlueprintBinding, BlueprintMetadata, BlueprintOutput, MessageFormatRef, isOutputIcon, SpawnerEnvTarget, BlueprintGadgetSummary, AiChatStreamEvent, BlueprintScreenshotUpload, BLUEPRINT_SCREENSHOT_R2_PREFIX, blueprintScreenshotUrl, ChatAttachmentUpload, ChatAttachmentHandle, ChatAttachmentRef, BoundHookInfo, PreApprovableAction, PresenceParticipant, PresenceSubscriber, SlashCommandChoice, SlashCommandRequest, validateBindingName, createOpenGadgetError, OPEN_GADGET_ERROR_CODES, resolveSiteName } from '@gadgets/workshop-shared/api';
+import { Overseer, GadgetMetadata, UiBundle, WorkpieceId, WorkpieceSummary, WorkpiecesSubscriber, GadgetClient, GadgetBindingInfo, GatekeeperClient, ActionState, ActionLogEntry, ActionsSubscriber, CodeUpdate, CodeSubscriber, AiChatMetadata, AiChatMessage, AiChatHistoryPage, AiChatSubscriber, AiChatAuthorInfo, AiModelConfig, AiChatMessageBody, AgentSpawnerConfig, ConsoleLogSubscriber, ConsoleLogEvent, CapsuleSpecifier, CollaboratorInfo, CollaboratorRole, AffectedCollaborator, ShareLinkInfo, GatekeeperCreationSpec, ObserverConfigCallback, ObserverBindingNeed, ObserverBindingFailure, BlueprintBindingAnnotation, BlueprintBinding, BlueprintMetadata, BlueprintOutput, MessageFormatRef, isOutputIcon, SpawnerEnvTarget, BlueprintGadgetSummary, AiChatStreamEvent, BlueprintScreenshotUpload, BLUEPRINT_SCREENSHOT_R2_PREFIX, blueprintScreenshotUrl, ChatAttachmentUpload, ChatAttachmentHandle, ChatAttachmentRef, BoundHookInfo, PreApprovableAction, PresenceParticipant, PresenceSubscriber, SlashCommandChoice, SlashCommandRequest, validateBindingName, createOpenGadgetError, OPEN_GADGET_ERROR_CODES, resolveSiteName, ComputerBootConfig, ComputerRunStatus } from '@gadgets/workshop-shared/api';
 import { Gatekeeper, HookInitiator, ResourceDescription, ApprovalQueue, ActionDescription, ObservationAuthorizer, ObservationDescription, VendorDescription, SupportedResource, resolveRequestedResource, HookController, HookDescription, AGENT_CATALOG_MAX_ENTRIES, ActionKind } from "@gadgets/workshop-shared/gatekeeper";
 import {
   DurableObject, WorkerEntrypoint, RpcStub as NativeRpcStub,
@@ -926,6 +926,20 @@ function makeOverseerStorage(storage: DurableObjectStorage) {
             return observer.observerId;
           }
         }
+      }),
+
+      // ── Computer agent state ──────────────────────────────────────────────
+      // Per-workspace boot configuration for the Grok Computer container (repos, dotfiles,
+      // credentials, env vars, boot script, loop/duration limits). Stored as a single record
+      // keyed by "default" since there's one config per workspace.
+      computerBootConfig: collection<ComputerBootConfig>()({
+        primaryKey: () => "default",
+      }),
+
+      // Per-chat Computer run state, tracking the lifecycle of a long-running agent turn.
+      // Keyed by `computerRun.<chatId>` so the Overseer can resume after a restart.
+      computerRuns: collection<ComputerRunStatus>()({
+        primaryKey: (run: ComputerRunStatus) => `computerRun.${run.chatId}`,
       }),
     }
   });
@@ -3824,6 +3838,388 @@ class OverseerImpl implements AgentHooks {
     }
   }
 
+  // ─── Computer agent: boot config & run management ──────────────────────────
+  //
+  // These methods manage the Grok Computer container's boot configuration and long-running
+  // agent turns. The Computer agent runs Grok Build inside a Cloudflare Computer container,
+  // bypassing the normal pi-based agent loop entirely.
+
+  /** Default boot config when none has been set yet. */
+  static #DEFAULT_BOOT_CONFIG: ComputerBootConfig = {
+    githubRepos: [],
+    dotfiles: [],
+    envVars: [],
+    credentials: [],
+    bootScript: "",
+    autoApprove: true,
+    maxLoopIterations: 1,
+    maxDurationSeconds: 86_400, // 24h
+  };
+
+  /** Returns the workspace's Computer boot config, or the default if none is set. */
+  async getComputerBootConfig(): Promise<ComputerBootConfig> {
+    return this.storage.computerBootConfig.get("default")
+      ?? OverseerImpl.#DEFAULT_BOOT_CONFIG;
+  }
+
+  /** Persists the Computer boot config for this workspace. */
+  async setComputerBootConfig(config: ComputerBootConfig): Promise<void> {
+    this.storage.computerBootConfig.put(config);
+  }
+
+  /** Returns the current or most recent Computer run status for a chat, or null. */
+  async #getComputerRunStatus(chatId: number): Promise<ComputerRunStatus | null> {
+    return this.storage.computerRuns.get(`computerRun.${chatId}`) ?? null;
+  }
+
+  /** Creates a fresh Computer run state for a chat, or reuses an existing paused/idle one. */
+  #createComputerRunState(chatId: number): ComputerRunStatus {
+    const existing = this.storage.computerRuns.get(`computerRun.${chatId}`);
+    if (existing && (existing.status === "paused" || existing.status === "idle")) {
+      existing.status = "running";
+      existing.lastActiveAt = new Date();
+      this.storage.computerRuns.put(existing);
+      return existing;
+    }
+    const runId = crypto.randomUUID();
+    const state: ComputerRunStatus = {
+      runId,
+      chatId,
+      status: "running",
+      startedAt: new Date(),
+      lastActiveAt: new Date(),
+      durationMs: 0,
+      loopCount: 0,
+      lastOutputPreview: "",
+      containerAlive: false,
+    };
+    this.storage.computerRuns.put(state);
+    return state;
+  }
+
+  /** Persists an updated Computer run state. */
+  #saveComputerRunState(state: ComputerRunStatus): void {
+    state.durationMs = Date.now() - state.startedAt.getTime();
+    this.storage.computerRuns.put(state);
+  }
+
+  /**
+   * Ensures the Computer container is booted with the given config.
+   * Calls the bridge's /boot endpoint to apply repos, dotfiles, env vars, etc.
+   * Returns the bridge base URL for subsequent /prompt calls.
+   */
+  async #ensureComputerBooted(
+    bootConfig: ComputerBootConfig,
+    runState: ComputerRunStatus,
+  ): Promise<string> {
+    if (!this.env.GROK_COMPUTER_BRIDGE) {
+      throw new Error(
+        "Grok Computer bridge is not configured. Set the GROK_COMPUTER_BRIDGE service binding " +
+        "in the workshop backend's wrangler config.");
+    }
+
+    // The service binding provides a fetch() interface. The bridge Worker's own URL is
+    // accessed via the binding's fetch method.
+    const bridgeUrl = "https://grok-computer-bridge.internal";
+
+    const bootResponse = await this.env.GROK_COMPUTER_BRIDGE.fetch(
+      `${bridgeUrl}/boot`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(this.env.GROK_BRIDGE_API_KEY
+            ? { Authorization: `Bearer ${this.env.GROK_BRIDGE_API_KEY}` }
+            : {}),
+        },
+        body: JSON.stringify({
+          githubRepos: bootConfig.githubRepos,
+          dotfiles: bootConfig.dotfiles,
+          envVars: bootConfig.envVars,
+          credentials: bootConfig.credentials,
+          bootScript: bootConfig.bootScript,
+          grokModel: bootConfig.grokModel ?? "grok-build",
+          autoApprove: bootConfig.autoApprove ?? true,
+        }),
+      },
+    );
+
+    if (!bootResponse.ok) {
+      const text = await bootResponse.text();
+      throw new Error(`Computer boot failed: ${bootResponse.status} ${text}`);
+    }
+
+    const result = await bootResponse.json() as { grokSessionId: string };
+    runState.grokSessionId = result.grokSessionId;
+    runState.containerAlive = true;
+    return bridgeUrl;
+  }
+
+  /**
+   * Sends a prompt to the Computer bridge and streams the SSE response back as
+   * AiChatStreamEvent for chat subscribers. Accumulates the full text response and
+   * persists it as an AiChatMessage when done.
+   */
+  async #streamComputerPrompt(
+    chatId: number,
+    bridgeUrl: string,
+    prompt: string,
+    runState: ComputerRunStatus,
+    liveChat: LiveChatContext,
+  ): Promise<void> {
+    const response = await this.env.GROK_COMPUTER_BRIDGE!.fetch(
+      `${bridgeUrl}/prompt`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(this.env.GROK_BRIDGE_API_KEY
+            ? { Authorization: `Bearer ${this.env.GROK_BRIDGE_API_KEY}` }
+            : {}),
+        },
+        body: JSON.stringify({ prompt, alwaysApprove: true }),
+        signal: liveChat.cancelController.signal,
+      },
+    );
+
+    if (!response.ok || !response.body) {
+      const text = await response.text();
+      throw new Error(`Bridge error: ${response.status} ${text}`);
+    }
+
+    // Parse the SSE stream and emit AiChatStreamEvent for each bridge event.
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let fullText = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6);
+        try {
+          const event = JSON.parse(data) as { type: string; data: any };
+          const streamEvent = this.#transformBridgeEvent(event);
+          if (streamEvent) {
+            this.#emitStreamEvent(chatId, streamEvent);
+            if (event.type === "text" && typeof event.data === "string") {
+              fullText += event.data;
+            }
+          }
+        } catch {
+          // Ignore unparseable SSE lines
+        }
+      }
+    }
+
+    // Persist the agent response as a durable chat message.
+    runState.lastOutputPreview = fullText.slice(0, 200);
+    const agentAuthor: AiChatAuthorInfo = {
+      type: "agent",
+      id: "grok-computer",
+      name: "Grok Computer",
+    };
+    this.addChatMessages(chatId, agentAuthor, [{
+      type: "message",
+      message: fullText,
+    }]);
+  }
+
+  /**
+   * Transforms a bridge SSE event into an AiChatStreamEvent.
+   * Bridge events: { type: "text"|"thought"|"toolCall"|"toolResult"|"plan"|"end", data }
+   */
+  #transformBridgeEvent(event: { type: string; data: any }): AiChatStreamEvent | null {
+    switch (event.type) {
+      case "text":
+        return { type: "textDelta", delta: event.data as string };
+      case "thought":
+        return { type: "reasoningDelta", delta: event.data as string };
+      case "toolCall": {
+        const toolCallId = event.data?.id ?? crypto.randomUUID();
+        return {
+          type: "toolCallStarted",
+          toolCallId,
+          toolName: event.data?.tool ?? "unknown",
+        };
+      }
+      case "toolResult": {
+        const result = event.data?.result;
+        return {
+          type: "toolOutputDelta",
+          toolCallId: event.data?.id ?? "",
+          delta: typeof result === "string" ? result : JSON.stringify(result),
+        };
+      }
+      default:
+        return null;
+    }
+  }
+
+  /** Emits a stream event to all chat subscribers. */
+  #emitStreamEvent(chatId: number, event: AiChatStreamEvent): void {
+    for (const subscriber of this.#chatSubscribers) {
+      subscriber.stream(chatId, event).catch(() => {});
+    }
+  }
+
+  /**
+   * Runs a Computer agent turn. Instead of calling pi's runAgent(), this:
+   * 1. Boots the Computer container (if not already running)
+   * 2. Sends the user's prompt to the grok bridge via HTTP
+   * 3. Streams SSE events back as AiChatStreamEvent
+   * 4. Persists the response as AiChatMessage
+   * 5. If loop mode is enabled, continues sending prompts until stopped
+   *
+   * Long-running support:
+   * - The DO alarm is extended to 5 min intervals during Computer runs
+   * - Run state persists in DO storage for resumption after restart
+   * - maxDurationSeconds (default 86400 = 24h) and maxLoopIterations enforce limits
+   */
+  async #runComputerAgentTurn(
+    chatId: number,
+    aiModel: UserAiModelRecord,
+    initiator: AiChatAuthorInfo,
+    liveChat: LiveChatContext,
+  ): Promise<void> {
+    const turnLogger = this.logger.with({
+      operation: "computer.agent.run",
+      chatId,
+      modelId: aiModel.profile.id,
+    });
+
+    try {
+      // 1. Get or create the Computer run state
+      const runState = this.#createComputerRunState(chatId);
+      turnLogger.info("computer agent run started", {
+        event: "computer.agent.run.started",
+      });
+
+      // 2. Emit booting event
+      this.#emitStreamEvent(chatId, { type: "computerBooting" });
+
+      // 3. Boot the container with the configured boot config
+      const bootConfig = await this.getComputerBootConfig();
+      const bridgeUrl = await this.#ensureComputerBooted(bootConfig, runState);
+
+      // 4. Emit booted event
+      this.#emitStreamEvent(chatId, {
+        type: "computerBooted",
+        grokSessionId: runState.grokSessionId ?? "",
+      });
+
+      // 5. Build the prompt from chat history (last user message)
+      const chatMessages = this.#listChatTail(chatId);
+      const lastUserMessage = [...chatMessages]
+        .reverse()
+        .find(m => m.author.type === "user" && m.type === "message");
+      const prompt = lastUserMessage?.type === "message"
+        ? (lastUserMessage as any).text ?? ""
+        : "";
+
+      if (!prompt) {
+        turnLogger.warn("no user message found for computer agent", { event: "computer.agent.run.noPrompt", chatId });
+        return;
+      }
+
+      // 6. Run the agent loop
+      const maxLoops = bootConfig.maxLoopIterations ?? 1;
+      const maxDuration = (bootConfig.maxDurationSeconds ?? 86_400) * 1000;
+
+      while (runState.status === "running") {
+        // Check duration limit
+        const elapsed = Date.now() - runState.startedAt.getTime();
+        if (maxDuration > 0 && elapsed >= maxDuration) {
+          runState.status = "timeout";
+          this.#emitStreamEvent(chatId, {
+            type: "computerStatus",
+            status: "timeout",
+          });
+          break;
+        }
+
+        // Check loop limit (0 = unlimited)
+        if (maxLoops > 0 && runState.loopCount >= maxLoops) {
+          runState.status = "completed";
+          this.#emitStreamEvent(chatId, {
+            type: "computerStatus",
+            status: "completed",
+          });
+          break;
+        }
+
+        // Emit loop start
+        this.#emitStreamEvent(chatId, {
+          type: "computerLoopStart",
+          iteration: runState.loopCount + 1,
+        });
+
+        const loopStart = Date.now();
+
+        // Send prompt to bridge and stream response
+        await this.#streamComputerPrompt(chatId, bridgeUrl, prompt, runState, liveChat);
+
+        runState.loopCount++;
+        runState.lastActiveAt = new Date();
+        const loopDuration = Date.now() - loopStart;
+
+        this.#emitStreamEvent(chatId, {
+          type: "computerLoopEnd",
+          iteration: runState.loopCount,
+          durationMs: loopDuration,
+        });
+
+        // Persist the run state
+        this.#saveComputerRunState(runState);
+
+        // Check abort signal (user pressed stop)
+        if (liveChat.cancelController.signal.aborted) {
+          runState.status = "paused";
+          this.#emitStreamEvent(chatId, {
+            type: "computerStatus",
+            status: "paused",
+          });
+          break;
+        }
+      }
+
+      // 7. Persist final status
+      this.#saveComputerRunState(runState);
+      this.#emitStreamEvent(chatId, {
+        type: "computerStatus",
+        status: runState.status,
+      });
+
+      turnLogger.info("computer agent run finished", {
+        event: "computer.agent.run.finished",
+      });
+
+    } catch (err: unknown) {
+      turnLogger.error("computer agent run failed", {
+        event: "computer.agent.run.failed",
+        error: err,
+      });
+      // Persist error state
+      const existing = this.storage.computerRuns.get(`computerRun.${chatId}`);
+      if (existing) {
+        existing.status = "error";
+        existing.error = String(err);
+        this.#saveComputerRunState(existing);
+      }
+      this.#emitStreamEvent(chatId, { type: "computerStatus", status: "error" });
+      this.postAgentErrorMessage(chatId, aiModel.profile, String(err), "computer_error");
+    } finally {
+      this.#unregisterRunningAgent(chatId);
+    }
+  }
+
   // Start an agent turn for the given chat (fire-and-forget). Persists an `ActiveAgentRecord` so
   // the turn can be resumed after a server restart, and tracks the turn so the keep-alive alarm is
   // held while it runs. `initiatorUserId` is the hex DO ID of the user whose model/account is used,
@@ -3865,6 +4261,15 @@ class OverseerImpl implements AgentHooks {
                                  initiator: AiChatAuthorInfo,
                                  callbackInitiated: boolean,
                                  liveChat: LiveChatContext): Promise<void> {
+    // ── Computer agent branch ──────────────────────────────────────────────
+    // When the selected model's provider is "grok-computer", route to the Grok Computer
+    // bridge instead of the normal pi-based agent loop. The Computer agent runs Grok Build
+    // inside a Cloudflare Computer container with its own tool ecosystem.
+    if (aiModel.config.provider === "grok-computer") {
+      return this.#runComputerAgentTurn(chatId, aiModel, initiator, liveChat);
+    }
+
+    // ── Normal agent flow ───────────────────────────────────────────────────
     // When this turn is billed to the user's own Cloudflare account, we refresh their cached credit
     // balance once the turn completes (see the `finally` below) so the next billing decision
     // reflects the spend this turn just incurred, rather than waiting for the cache TTL to lapse.
@@ -6305,6 +6710,16 @@ export class OverseerDurableObject extends DurableObject<Cloudflare.Env> {
   // - If the DO dies *while* the alarm is running, the system will retry the alarm, thus resuming
   //   the agents yet again.
   async alarm() {
+    // Check for active Computer agent runs that need the alarm to keep the DO alive.
+    // Computer runs can last up to 24h; the alarm ensures the DO is restarted if it
+    // dies mid-run, so the loop can resume from the persisted run state.
+    const computerRuns = [...this.impl.storage.computerRuns.list()];
+    const hasActiveComputerRun = computerRuns.some(r => r.status === "running" || r.status === "booting");
+    if (hasActiveComputerRun) {
+      // Reschedule the alarm for 5 minutes out to keep checking.
+      this.ctx.storage.setAlarm(Date.now() + 300_000);
+    }
+
     await this.impl.waitForAllAgentsToComplete();
     await this.impl.deliverReadyExternalMessageResponses();
   }
@@ -8484,6 +8899,82 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
                          this.clientUser.id.toString());
   }
 
+  // ─── Computer agent: public RPC methods ──────────────────────────────────
+
+  async getComputerBootConfig(): Promise<ComputerBootConfig> {
+    return this.impl.getComputerBootConfig();
+  }
+
+  async setComputerBootConfig(config: ComputerBootConfig): Promise<void> {
+    await this.impl.setComputerBootConfig(config);
+  }
+
+  async getComputerRunStatus(): Promise<ComputerRunStatus | null> {
+    // Return the most recent run across all chats in this workspace.
+    const runs = [...this.impl.storage.computerRuns.list()];
+    if (runs.length === 0) return null;
+    // Sort by startedAt descending and return the most recent.
+    runs.sort((a, b) => b.startedAt.valueOf() - a.startedAt.valueOf());
+    return runs[0];
+  }
+
+  async pauseComputerRun(): Promise<void> {
+    if (!this.impl.env.GROK_COMPUTER_BRIDGE) return;
+    await this.impl.env.GROK_COMPUTER_BRIDGE.fetch(
+      "https://grok-computer-bridge.internal/session/pause",
+      { method: "POST",
+        headers: this.impl.env.GROK_BRIDGE_API_KEY
+          ? { Authorization: `Bearer ${this.impl.env.GROK_BRIDGE_API_KEY}` }
+          : {} },
+    );
+  }
+
+  async resumeComputerRun(): Promise<void> {
+    if (!this.impl.env.GROK_COMPUTER_BRIDGE) return;
+    await this.impl.env.GROK_COMPUTER_BRIDGE.fetch(
+      "https://grok-computer-bridge.internal/session/resume",
+      { method: "POST",
+        headers: this.impl.env.GROK_BRIDGE_API_KEY
+          ? { Authorization: `Bearer ${this.impl.env.GROK_BRIDGE_API_KEY}` }
+          : {} },
+    );
+  }
+
+  async stopComputerRun(): Promise<void> {
+    if (!this.impl.env.GROK_COMPUTER_BRIDGE) return;
+    await this.impl.env.GROK_COMPUTER_BRIDGE.fetch(
+      "https://grok-computer-bridge.internal/session/reset",
+      { method: "POST",
+        headers: this.impl.env.GROK_BRIDGE_API_KEY
+          ? { Authorization: `Bearer ${this.impl.env.GROK_BRIDGE_API_KEY}` }
+          : {} },
+    );
+  }
+
+  async sendComputerCommand(command: string): Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+  }> {
+    if (!this.impl.env.GROK_COMPUTER_BRIDGE) {
+      throw new Error("Grok Computer bridge is not configured.");
+    }
+    const response = await this.impl.env.GROK_COMPUTER_BRIDGE.fetch(
+      "https://grok-computer-bridge.internal/command",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(this.impl.env.GROK_BRIDGE_API_KEY
+            ? { Authorization: `Bearer ${this.impl.env.GROK_BRIDGE_API_KEY}` }
+            : {}),
+        },
+        body: JSON.stringify({ command }),
+      },
+    );
+    return response.json();
+  }
+
   async finalizeChatDraft(chatId: number): Promise<void> {
     let meta = this.impl.assertChatNotActive(chatId);
     this.impl.materializeChatDraft(chatId, meta);
@@ -8946,6 +9437,13 @@ class UseOverseerInterface extends RpcTarget implements Overseer {
   async deleteChat(_chatId: number): Promise<void> { this.#deny(); }
   async stopAgent(_chatId: number): Promise<void> { this.#deny(); }
   async retryAgent(_chatId: number, _modelId: string): Promise<void> { this.#deny(); }
+  async getComputerBootConfig(): Promise<ComputerBootConfig> { this.#deny(); }
+  async setComputerBootConfig(_config: ComputerBootConfig): Promise<void> { this.#deny(); }
+  async getComputerRunStatus(): Promise<ComputerRunStatus | null> { this.#deny(); }
+  async pauseComputerRun(): Promise<void> { this.#deny(); }
+  async resumeComputerRun(): Promise<void> { this.#deny(); }
+  async stopComputerRun(): Promise<void> { this.#deny(); }
+  async sendComputerCommand(_command: string): Promise<{stdout: string; stderr: string; exitCode: number}> { this.#deny(); }
   async subscribeToConsoleLogs(_subscriber: RpcStub<ConsoleLogSubscriber>): Promise<RpcStub<{}>> {
     // Inert: "use" sessions never receive console logs. The inbound subscriber stub is left
     // undup'd, so the RPC system disposes it when this call returns.

@@ -924,7 +924,12 @@ export type CloudflareAccountOption = {
 // so it is routed through pi's "openai-completions" stream. The proxy URL comes from
 // `apiUrl`, the proxy's API key from `apiToken`. No `accountId` is required — the proxy
 // holds the upstream Cloudflare credentials itself.
-export type AiModelProvider = "openai" | "anthropic" | "google" | "cloudflare" | "ollama" | "cf-proxy";
+// "grok-computer" routes chat to a Grok Build agent running inside a Cloudflare Computer
+// (a container with a real Linux environment and SQLite-backed VFS). The Overseer detects this
+// provider and branches to #runComputerAgentTurn() instead of the normal pi-based agent loop.
+// The bridge URL is discovered via the GROK_COMPUTER_BRIDGE service binding; no apiToken or
+// apiUrl is needed on the model config itself.
+export type AiModelProvider = "openai" | "anthropic" | "google" | "cloudflare" | "ollama" | "cf-proxy" | "grok-computer";
 
 // Information about the AI gateway configuration. Returned by `AuthenticatedApi.getAiConfig()`.
 export type AiGatewayInfo = {
@@ -1003,6 +1008,103 @@ export const SUGGESTED_MODELS: Record<
       name: "GLM 5.2 Cyber (Proxy)", contextWindow: 262144, outputLimit: WORKERS_AI_OUTPUT_LIMIT,
     },
   },
+  "grok-computer": {
+    "grok-computer-default": {
+      name: "Grok Computer", contextWindow: 200000,
+    },
+  },
+};
+
+// ─── Computer Agent Boot Configuration ──────────────────────────────────────
+//
+// When the selected model's provider is "grok-computer", the Overseer boots a Cloudflare
+// Computer container with these settings before sending the first prompt. The config is
+// stored per-workspace in the Overseer DO and applied on the next container boot.
+
+/** Configuration for bootstrapping a Cloudflare Computer container. */
+export type ComputerBootConfig = {
+  /** GitHub repositories to clone on boot. Cloned into /workspace/repos/<name>. */
+  githubRepos: Array<{
+    /** Repository URL, e.g. "https://github.com/user/repo". */
+    url: string;
+    /** Branch to clone. Default: the repo's default branch. */
+    branch?: string;
+    /** Subdirectory to clone into. Default: derived from the repo URL. */
+    path?: string;
+    /** If true, uses the configured GitHub token for authentication. */
+    private?: boolean;
+  }>;
+
+  /** Dotfiles to write into the container's home directory (e.g. ".bashrc", ".gitconfig"). */
+  dotfiles: Array<{
+    /** Path relative to the home directory, e.g. ".grok/config.toml". */
+    path: string;
+    /** Full file content. */
+    content: string;
+  }>;
+
+  /** Environment variables to inject into the container's process environment. */
+  envVars: Array<{
+    key: string;
+    value: string;
+    /** If true, the value is masked in the UI. */
+    secret?: boolean;
+  }>;
+
+  /** Credentials for authentication. Stored in DO storage (encrypted at rest by Cloudflare). */
+  credentials: Array<{
+    type: "github-token" | "ssh-key" | "api-key" | "custom";
+    /** Identifier for the credential (e.g. "GITHUB_TOKEN", "SSH_KEY", or an API key name). */
+    name: string;
+    /** The secret value (token, key, etc.). */
+    value: string;
+  }>;
+
+  /** Shell script to run after repos are cloned, dotfiles written, and env vars set. */
+  bootScript?: string;
+
+  /** Grok model to use inside the Computer. Default: "grok-build". */
+  grokModel?: string;
+
+  /** Whether to enable auto-approve in the grok agent (headless mode). Default: true. */
+  autoApprove?: boolean;
+
+  /** Max loop iterations before auto-stopping (0 = unlimited). Default: 1 (single run). */
+  maxLoopIterations?: number;
+
+  /** Max run duration in seconds (0 = unlimited, default 86400 = 24h). */
+  maxDurationSeconds?: number;
+};
+
+// ─── Computer Agent Run Status ──────────────────────────────────────────────
+//
+// The Overseer tracks the state of each Computer agent run in DO storage so it can
+// resume after a restart and report progress to the UI via polling and stream events.
+
+/** Status of a Computer agent run. */
+export type ComputerRunStatus = {
+  /** Unique run identifier. */
+  runId: string;
+  /** The chat thread this run is associated with. */
+  chatId: number;
+  /** Current lifecycle state. */
+  status: "idle" | "booting" | "running" | "paused" | "completed" | "error" | "timeout";
+  /** When the run started. */
+  startedAt: Date;
+  /** When the run last had activity. */
+  lastActiveAt: Date;
+  /** Total wall-clock duration in ms. */
+  durationMs: number;
+  /** Number of loop iterations completed. */
+  loopCount: number;
+  /** Last text output from the agent (truncated for preview). */
+  lastOutputPreview: string;
+  /** Error message if status is "error". */
+  error?: string;
+  /** Current grok session ID inside the container. */
+  grokSessionId?: string;
+  /** Whether the container is currently alive. */
+  containerAlive: boolean;
 };
 
 // Metadata about a workspace (one Overseer DO and everything in it). Includes everything needed
@@ -1712,6 +1814,42 @@ export interface Overseer extends RpcTarget {
   // would change (lose access or be downgraded to a lower role) as a consequence, so the caller
   // can present checkboxes for which to keep vs. remove.
   previewRevokeShareLink(linkId: string): Promise<AffectedCollaborator[]>;
+
+  // --- Computer agent management ---
+  //
+  // When the selected model's provider is "grok-computer", the Overseer boots a Cloudflare
+  // Computer container and routes chat prompts to a Grok Build agent running inside it.
+  // These methods manage the boot configuration and run lifecycle.
+
+  // Get the Computer boot configuration for this workspace.
+  // Applied on the next container boot (when a "grok-computer" model is first used).
+  getComputerBootConfig(): Promise<ComputerBootConfig>;
+
+  // Set the Computer boot configuration. Stored per-workspace in the Overseer DO.
+  setComputerBootConfig(config: ComputerBootConfig): Promise<void>;
+
+  // Get the status of the current or most recent Computer agent run.
+  // Returns null if no run has been started yet.
+  getComputerRunStatus(): Promise<ComputerRunStatus | null>;
+
+  // Pause the current Computer agent run (suspends the grok process via SIGSTOP).
+  // The container stays alive; call resumeComputerRun() to continue.
+  pauseComputerRun(): Promise<void>;
+
+  // Resume a paused Computer agent run (sends SIGCONT to the grok process).
+  resumeComputerRun(): Promise<void>;
+
+  // Stop the current Computer agent run and reset the grok session.
+  // The container is kept alive but the grok agent context is cleared.
+  stopComputerRun(): Promise<void>;
+
+  // Send a direct shell command to the Computer container (bypasses the grok agent).
+  // Useful for inspecting files, running tests, or debugging.
+  sendComputerCommand(command: string): Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+  }>;
 }
 
 export type AiChatMetadata = {
@@ -2357,6 +2495,26 @@ export type AiChatStreamEvent = {
 } | {
   type: "codeUpdate";
   update: Uint8Array;
+} | {
+  // Computer agent boot started. Emitted when the container is being initialized.
+  type: "computerBooting";
+} | {
+  // Computer agent boot completed. The container is ready and the grok agent has started.
+  type: "computerBooted";
+  grokSessionId: string;
+} | {
+  // Computer agent loop iteration started.
+  type: "computerLoopStart";
+  iteration: number;
+} | {
+  // Computer agent loop iteration completed.
+  type: "computerLoopEnd";
+  iteration: number;
+  durationMs: number;
+} | {
+  // Computer agent run status changed.
+  type: "computerStatus";
+  status: ComputerRunStatus["status"];
 };
 
 // Interface implemented by the client to receive action-log upserts.
