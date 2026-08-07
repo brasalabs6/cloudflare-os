@@ -13,9 +13,10 @@
 // is active, and updates from AiChatStreamEvent "computerStatus" events in real time.
 
 import { useState, useEffect } from 'react'
-import { Button, Banner } from '@cloudflare/kumo'
+import { Button } from '@cloudflare/kumo'
 import {
   Circle, CaretDown, CaretRight, Pause, Play, Stop, ArrowClockwise,
+  WarningCircle, Warning, Lightning,
 } from '@phosphor-icons/react'
 import type { ComputerRunStatus } from '@gadgets/workshop-shared/api'
 
@@ -29,6 +30,102 @@ const STATUS_COLORS: Record<ComputerRunStatus['status'], string> = {
   timeout: 'var(--color-kumo-warning)',
   booting: 'var(--color-kumo-info)',
   idle: 'var(--color-kumo-tint)',
+}
+
+// ─── Error type configuration ───────────────────────────────────────────────
+//
+// Maps bridge error types to UI presentation: icon, color, human-readable
+// description, and whether the error is recoverable (Retry) or fatal (Reset).
+//
+// Recoverable errors: the caller can retry after a short wait — the container
+// or agent might come back on its own.
+// Fatal errors: something is fundamentally wrong (bad config, validation
+// failure) and the session needs to be reset.
+
+const RECOVERABLE_ERRORS = new Set([
+  'container_not_ready',
+  'grok_agent_not_running',
+  'rpc_timeout',
+  'bridge_error',
+  'computer_error',
+])
+
+interface ErrorConfig {
+  icon: typeof WarningCircle
+  color: string
+  description: string
+  recoverable: boolean
+}
+
+const ERROR_CONFIGS: Record<string, ErrorConfig> = {
+  container_not_ready: {
+    icon: Lightning,
+    color: 'var(--color-kumo-warning)',
+    description: 'The container is still starting up. Wait a moment and retry.',
+    recoverable: true,
+  },
+  grok_agent_not_running: {
+    icon: Warning,
+    color: 'var(--color-kumo-warning)',
+    description: 'The grok agent is not running. Try retrying or resetting the session.',
+    recoverable: true,
+  },
+  rpc_timeout: {
+    icon: WarningCircle,
+    color: 'var(--color-kumo-warning)',
+    description: 'The agent took too long to respond. Try again or reset the session.',
+    recoverable: true,
+  },
+  boot_failed: {
+    icon: WarningCircle,
+    color: 'var(--color-kumo-danger)',
+    description: 'Boot configuration failed. Check your repos, dotfiles, and credentials, then reset.',
+    recoverable: false,
+  },
+  validation_error: {
+    icon: Warning,
+    color: 'var(--color-kumo-danger)',
+    description: 'The request was rejected due to invalid input. Fix the configuration and reset.',
+    recoverable: false,
+  },
+  exec_failed: {
+    icon: WarningCircle,
+    color: 'var(--color-kumo-danger)',
+    description: 'Command execution failed inside the container.',
+    recoverable: false,
+  },
+  unauthorized: {
+    icon: WarningCircle,
+    color: 'var(--color-kumo-danger)',
+    description: 'Authentication failed. Check the bridge API key configuration.',
+    recoverable: false,
+  },
+  computer_error: {
+    icon: WarningCircle,
+    color: 'var(--color-kumo-danger)',
+    description: 'An unexpected error occurred during the computer agent run.',
+    recoverable: true,
+  },
+  bridge_error: {
+    icon: WarningCircle,
+    color: 'var(--color-kumo-danger)',
+    description: 'The bridge returned an error. Try retrying or resetting the session.',
+    recoverable: true,
+  },
+}
+
+/**
+ * Returns the error config for a given error code, falling back to a
+ * generic error config for unknown codes.
+ */
+function getErrorConfig(code?: string): ErrorConfig | null {
+  if (!code) return null
+  return ERROR_CONFIGS[code] ?? {
+    icon: WarningCircle,
+    color: 'var(--color-kumo-danger)',
+    description: 'An unknown error occurred.',
+    recoverable: RECOVERABLE_ERRORS.has(code),
+  }
 }
 
 // ─── Duration formatter ─────────────────────────────────────────────────────
@@ -60,6 +157,61 @@ function Row({ label, value }: { label: string; value: string }) {
     <div className="flex justify-between items-center">
       <span className="text-xs text-kumo-subtle">{label}</span>
       <span className="text-xs font-medium">{value}</span>
+    </div>
+  )
+}
+
+// ─── Typed error banner ─────────────────────────────────────────────────────
+//
+// Shows a colored banner with an icon, the error message, a human-readable
+// description, and action buttons (Retry for recoverable, Reset for fatal).
+
+function TypedErrorBanner({
+  error,
+  code,
+  onReset,
+}: {
+  error: string
+  code?: string
+  onReset: () => void
+}) {
+  const config = getErrorConfig(code)
+  const Icon = config?.icon ?? WarningCircle
+  const color = config?.color ?? 'var(--color-kumo-danger)'
+  const recoverable = config?.recoverable ?? true
+
+  return (
+    <div
+      className="rounded-lg p-3 mt-1"
+      style={{
+        backgroundColor: `color-mix(in srgb, ${color} 10%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${color} 40%, transparent)`,
+      }}
+    >
+      <div className="flex items-start gap-2">
+        <Icon size={16} style={{ color, flexShrink: 0, marginTop: 1 }} />
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-medium" style={{ color }}>
+            {error}
+          </div>
+          {config && (
+            <div className="text-[11px] text-kumo-subtle mt-0.5">
+              {config.description}
+            </div>
+          )}
+          <div className="flex gap-2 mt-2">
+            {recoverable ? (
+              <Button size="sm" variant="secondary" onClick={onReset}>
+                <ArrowClockwise size={12} className="mr-1" /> Retry
+              </Button>
+            ) : (
+              <Button size="sm" variant="destructive" onClick={onReset}>
+                <Stop size={12} className="mr-1" /> Reset Session
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -144,9 +296,13 @@ export function ComputerRunPanel({
             </div>
           )}
 
-          {/* Error message */}
+          {/* Typed error banner with retry/reset actions */}
           {runStatus.error && (
-            <Banner variant="error" title={runStatus.error} />
+            <TypedErrorBanner
+              error={runStatus.error}
+              code={runStatus.code}
+              onReset={onReset}
+            />
           )}
 
           {/* Control buttons */}

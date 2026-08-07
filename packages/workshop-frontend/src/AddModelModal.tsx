@@ -166,9 +166,12 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
     const isOllama = selection?.provider === 'ollama'
     const isCloudflare = selection?.provider === 'cloudflare'
     const isCfProxy = selection?.provider === 'cf-proxy'
+    const isGrokComputer = selection?.provider === 'grok-computer'
     const showCredentials = !gatewayMode
 
-    if (showCredentials && selection && !isOllama && !apiToken.trim()) {
+    // grok-computer doesn't need an API token — the bridge authenticates internally
+    // via the GROK_BRIDGE_API_KEY env var and the XAI_API_KEY secret.
+    if (showCredentials && selection && !isOllama && !isGrokComputer && !apiToken.trim()) {
       newErrors.apiToken = 'Please enter your API token'
     }
 
@@ -228,6 +231,7 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
   const isOllama = selection?.provider === 'ollama'
   const isCloudflare = selection?.provider === 'cloudflare'
   const isCfProxy = selection?.provider === 'cf-proxy'
+  const isGrokComputer = selection?.provider === 'grok-computer'
   const showCredentials = !gatewayMode
 
   // Group options by provider for rendering with visual separators.
@@ -317,8 +321,8 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
             />
           )}
 
-          {/* API Token */}
-          {showCredentials && selection && (
+          {/* API Token — not shown for grok-computer (bridge handles auth internally) */}
+          {showCredentials && selection && !isGrokComputer && (
             <SensitiveInput
               label="API Token"
               placeholder={API_TOKEN_PLACEHOLDERS[selection.provider]}
@@ -336,6 +340,14 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
               error={errors.apiToken}
               variant={errors.apiToken ? 'error' : 'default'}
             />
+          )}
+
+          {/* Info banner for grok-computer (no credentials needed) */}
+          {showCredentials && isGrokComputer && (
+            <div className="rounded-lg border border-kumo-line bg-kumo-tint px-4 py-3 text-sm text-kumo-subtle">
+              No API key needed — the Grok Computer bridge authenticates internally via the
+              service binding. The xAI API key is configured as a Worker secret on the bridge.
+            </div>
           )}
 
           {/* Ollama API URL (always visible for Ollama) */}
@@ -364,8 +376,8 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
             />
           )}
 
-          {/* Advanced Settings for non-Ollama, non-Cloudflare, non-cf-proxy providers */}
-          {showCredentials && selection && !isOllama && !isCloudflare && !isCfProxy && (
+          {/* Advanced Settings for non-Ollama, non-Cloudflare, non-cf-proxy, non-grok-computer providers */}
+          {showCredentials && selection && !isOllama && !isCloudflare && !isCfProxy && !isGrokComputer && (
             <Collapsible.Root
               open={advancedOpen}
               onOpenChange={setAdvancedOpen}

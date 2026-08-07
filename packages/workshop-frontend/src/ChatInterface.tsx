@@ -110,6 +110,7 @@ import { HookToggle } from "./components/HookToggle";
 import { handlePickerKeyDown } from "./pickerNavigation";
 import { normalizeResourceUrl } from "./resourceMatching";
 import { ComputerRunPanel } from "./components/chat/ComputerRunPanel";
+import { ContainerTerminal } from "./components/chat/ContainerTerminal";
 import { ComputerBootConfigModal } from "./components/chat/ComputerBootConfigModal";
 import { Gear } from "@phosphor-icons/react";
 import DeleteConfirmationDialog from "./components/DeleteConfirmationDialog";
@@ -6891,6 +6892,7 @@ function ChatInterface({
                           onStop={() => overseer?.stopComputerRun().catch(() => {})}
                           onReset={() => overseer?.stopComputerRun().catch(() => {})}
                         />
+                        <ContainerTerminal overseer={overseer ?? null} />
                       </div>
                     )}
 
