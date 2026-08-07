@@ -26,6 +26,50 @@ const GROK_CWD = process.env.GROK_CWD ?? "/workspace";
 // Both sides use the same variable name for consistency.
 const BRIDGE_API_KEY = process.env.GROK_BRIDGE_API_KEY ?? "";
 
+// ─── Structured error classification ─────────────────────────────────────────
+//
+// Every error response from the bridge uses a structured JSON format with
+// three fields so the backend and frontend can distinguish retryable from
+// fatal errors and show appropriate UI:
+//
+//   { error: string, errorType: string, recoverable: boolean }
+//
+// Error types:
+//   container_not_ready    — container is starting, retry after a short wait
+//   grok_agent_not_running — grok agent process is not running, call /boot first
+//   boot_failed            — boot configuration failed (bad repo, dotfile, etc.)
+//   rpc_timeout            — grok agent did not respond within the timeout
+//   exec_failed            — shell command execution failed
+//   validation_error       — request body failed validation
+//   unauthorized           — missing or invalid Bearer token
+
+/**
+ * Custom error class carrying a typed `errorType` and `recoverable` flag.
+ * Used internally so catch blocks can re-throw with structured context.
+ */
+class BridgeError extends Error {
+  constructor(message, errorType, recoverable) {
+    super(message);
+    this.name = "BridgeError";
+    this.errorType = errorType;
+    this.recoverable = recoverable;
+  }
+}
+
+/**
+ * Sends a structured error response as JSON.
+ *
+ * @param {import('node:http').ServerResponse} res  — the HTTP response
+ * @param {number} statusCode                        — HTTP status code
+ * @param {string} message                           — human-readable error message
+ * @param {string} errorType                         — typed error category
+ * @param {boolean} recoverable                       — whether the caller should retry
+ */
+function sendError(res, statusCode, message, errorType, recoverable) {
+  res.writeHead(statusCode, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ error: message, errorType, recoverable }));
+}
+
 // ─── ACP State ─────────────────────────────────────────────────────────────
 
 let grokProc = null;
@@ -76,7 +120,7 @@ async function startGrokAgent() {
     grokProc = null;
     sessionId = null;
     for (const { reject } of pendingRequests.values()) {
-      reject(new Error("grok agent exited"));
+      reject(new BridgeError("grok agent exited", "grok_agent_not_running", true));
     }
     pendingRequests.clear();
   });
@@ -101,7 +145,7 @@ async function startGrokAgent() {
 function rpcCall(method, params) {
   return new Promise((resolve, reject) => {
     if (!grokProc || !grokProc.stdin.writable) {
-      reject(new Error("grok agent not running"));
+      reject(new BridgeError("grok agent not running", "grok_agent_not_running", true));
       return;
     }
 
@@ -114,7 +158,7 @@ function rpcCall(method, params) {
     setTimeout(() => {
       if (pendingRequests.has(id)) {
         pendingRequests.delete(id);
-        reject(new Error(`RPC timeout: ${method}`));
+        reject(new BridgeError(`RPC timeout: ${method}`, "rpc_timeout", true));
       }
     }, 300_000);
   });
@@ -125,7 +169,7 @@ function handleMessage(data) {
     const { resolve, reject } = pendingRequests.get(data.id);
     pendingRequests.delete(data.id);
     if (data.error) {
-      reject(new Error(data.error.message || "RPC error"));
+      reject(new BridgeError(data.error.message || "RPC error", "rpc_timeout", true));
     } else {
       resolve(data.result);
     }
@@ -260,8 +304,7 @@ const server = createServer(async (req, res) => {
 
   // All endpoints require authentication, including /health and /status.
   if (!authenticate(req)) {
-    res.writeHead(401, { "Content-Type": "application/json" });
-    res.end('{"error":"unauthorized"}');
+    sendError(res, 401, "unauthorized", "unauthorized", false);
     return;
   }
 
@@ -297,8 +340,7 @@ const server = createServer(async (req, res) => {
   // ── POST /prompt ───────────────────────────────────────────────────────
   if (req.method === "POST" && url.pathname === "/prompt") {
     if (!grokProc || !sessionId) {
-      res.writeHead(503, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "grok agent not running" }));
+      sendError(res, 503, "grok agent not running", "grok_agent_not_running", true);
       return;
     }
 
@@ -308,15 +350,13 @@ const server = createServer(async (req, res) => {
     try {
       parsed = JSON.parse(body);
     } catch {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end('{"error":"invalid JSON"}');
+      sendError(res, 400, "invalid JSON", "validation_error", false);
       return;
     }
 
     const { prompt, alwaysApprove = true } = parsed;
     if (typeof prompt !== "string" || !prompt.trim()) {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end('{"error":"prompt is required"}');
+      sendError(res, 400, "prompt is required", "validation_error", false);
       return;
     }
 
@@ -357,7 +397,11 @@ const server = createServer(async (req, res) => {
         reject: (err) => {
           res.write(`data: ${JSON.stringify({
             type: "error",
-            data: { message: err.message },
+            data: {
+              message: err.message,
+              errorType: err.errorType ?? "rpc_timeout",
+              recoverable: err.recoverable ?? true,
+            },
           })}\n\n`);
           resolve();
         },
@@ -380,8 +424,7 @@ const server = createServer(async (req, res) => {
     try {
       config = JSON.parse(body);
     } catch {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end('{"error":"invalid JSON"}');
+      sendError(res, 400, "invalid JSON", "validation_error", false);
       return;
     }
 
@@ -389,8 +432,7 @@ const server = createServer(async (req, res) => {
     try {
       validateBootConfig(config);
     } catch (err) {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: err.message }));
+      sendError(res, 400, err.message, "validation_error", false);
       return;
     }
 
@@ -496,8 +538,7 @@ const server = createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: true, grokSessionId: sessionId }));
     } catch (err) {
       console.error("[bridge] boot failed:", err.message);
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: err.message }));
+      sendError(res, 500, err.message, "boot_failed", false);
     }
     return;
   }
@@ -513,15 +554,13 @@ const server = createServer(async (req, res) => {
     try {
       parsed = JSON.parse(body);
     } catch {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end('{"error":"invalid JSON"}');
+      sendError(res, 400, "invalid JSON", "validation_error", false);
       return;
     }
 
     const { command } = parsed;
     if (typeof command !== "string" || !command.trim()) {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end('{"error":"command is required"}');
+      sendError(res, 400, "command is required", "validation_error", false);
       return;
     }
 
@@ -548,8 +587,7 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, sessionId }));
     } catch (err) {
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: err.message }));
+      sendError(res, 500, err.message, "boot_failed", true);
     }
     return;
   }
@@ -561,8 +599,7 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
     } else {
-      res.writeHead(503, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "grok agent not running" }));
+      sendError(res, 503, "grok agent not running", "grok_agent_not_running", true);
     }
     return;
   }
@@ -574,15 +611,13 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
     } else {
-      res.writeHead(503, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "grok agent not running" }));
+      sendError(res, 503, "grok agent not running", "grok_agent_not_running", true);
     }
     return;
   }
 
   // ── 404 ────────────────────────────────────────────────────────────────
-  res.writeHead(404, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ error: "not found" }));
+  sendError(res, 404, "not found", "validation_error", false);
 });
 
 // ─── Initialization ─────────────────────────────────────────────────────────
@@ -592,18 +627,36 @@ async function main() {
   console.log(`[bridge] grok model: ${GROK_MODEL}`);
   console.log(`[bridge] grok cwd: ${GROK_CWD}`);
 
+  // Start the HTTP server FIRST, before attempting to start the grok agent.
+  // This ensures /health is always reachable so the Worker's ensureStarted()
+  // polling succeeds quickly, even if the grok agent takes time to start or
+  // needs a retry. The /health endpoint reports grokRunning: false until the
+  // agent is ready; /prompt returns 503 until then.
+  server.listen(PORT, () => {
+    console.log(`[bridge] HTTP server listening on http://0.0.0.0:${PORT}`);
+  });
+
+  // Start the grok agent in the background. If it fails, retry after 5s.
+  // The HTTP server stays up regardless — the Worker can reach /health and
+  // /boot even while the agent is starting or retrying.
   try {
     await startGrokAgent();
   } catch (err) {
     console.error("[bridge] failed to start grok agent:", err.message);
     console.error("[bridge] will retry in 5s...");
-    setTimeout(main, 5000);
-    return;
+    setTimeout(startGrokAgentWithRetry, 5000);
   }
+}
 
-  server.listen(PORT, () => {
-    console.log(`[bridge] HTTP server listening on http://0.0.0.0:${PORT}`);
-  });
+// Wrapper that retries startGrokAgent on failure.
+async function startGrokAgentWithRetry() {
+  try {
+    await startGrokAgent();
+  } catch (err) {
+    console.error("[bridge] grok agent retry failed:", err.message);
+    console.error("[bridge] will retry in 5s...");
+    setTimeout(startGrokAgentWithRetry, 5000);
+  }
 }
 
 main();

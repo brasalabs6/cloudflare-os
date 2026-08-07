@@ -2,7 +2,9 @@
 
 interface Env {
   // Durable Object namespace para o GrokComputer (um por agente).
-  GROK_COMPUTER: DurableObjectNamespace;
+  // Tipado com a classe GrokComputer para que getContainer() retorne
+  // um stub com os métodos corretos.
+  GROK_COMPUTER: DurableObjectNamespace<GrokComputer>;
 
   // Worker Loader binding — necessário para o Computer Workspace.
   LOADER: WorkerLoader;
@@ -13,4 +15,7 @@ interface Env {
   // Chave de API da xAI (secret — injetada via `wrangler secret put`).
   // O grok lê essa variável para autenticação sem browser.
   XAI_API_KEY: string;
+
+  // Modelo do grok a usar (default: "grok-build").
+  GROK_MODEL: string;
 }
