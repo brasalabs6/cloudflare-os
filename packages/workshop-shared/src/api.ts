@@ -917,7 +917,14 @@ export type CloudflareAccountOption = {
 };
 
 // Supported AI providers.
-export type AiModelProvider = "openai" | "anthropic" | "google" | "cloudflare" | "ollama";
+//
+// "cf-proxy" fronts a self-hosted OpenAI-compatible proxy (e.g. the cf-ai-rate-proxy-worker)
+// that mediates Cloudflare Workers AI with rate limiting, retries, failover, and optional
+// virtual model variants. It speaks the Chat Completions API, not the OpenAI Responses API,
+// so it is routed through pi's "openai-completions" stream. The proxy URL comes from
+// `apiUrl`, the proxy's API key from `apiToken`. No `accountId` is required — the proxy
+// holds the upstream Cloudflare credentials itself.
+export type AiModelProvider = "openai" | "anthropic" | "google" | "cloudflare" | "ollama" | "cf-proxy";
 
 // Information about the AI gateway configuration. Returned by `AuthenticatedApi.getAiConfig()`.
 export type AiGatewayInfo = {
@@ -984,6 +991,17 @@ export const SUGGESTED_MODELS: Record<
     "gemini-3.6-flash": {name: "Gemini 3.6 Flash", contextWindow: 1048576},
   },
   "ollama": {
+  },
+  "cf-proxy": {
+    "@cf/zai-org/glm-5.2": {
+      name: "GLM 5.2 (Proxy)", contextWindow: 262144, outputLimit: WORKERS_AI_OUTPUT_LIMIT,
+    },
+    "@cf/moonshotai/kimi-k2.7-code": {
+      name: "Kimi K2.7 Code (Proxy)", contextWindow: 262144, outputLimit: WORKERS_AI_OUTPUT_LIMIT,
+    },
+    "glm-5.2-cyber": {
+      name: "GLM 5.2 Cyber (Proxy)", contextWindow: 262144, outputLimit: WORKERS_AI_OUTPUT_LIMIT,
+    },
   },
 };
 

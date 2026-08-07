@@ -38,6 +38,9 @@ const ATTACHMENT_SUPPORT_BY_PROVIDER = {
   google: isTextImageOrPdfMime,
   cloudflare: isTextOrImageMime,
   ollama: isTextOrImageMime,
+  // cf-proxy fronts Cloudflare Workers AI, whose chat endpoint has no document input —
+  // same constraint as the "cloudflare" provider.
+  "cf-proxy": isTextOrImageMime,
 } satisfies Record<AiModelProvider, (mimeType: string) => boolean>;
 
 function sanitizeChatAttachmentMimeType(mimeType: string | undefined): string {

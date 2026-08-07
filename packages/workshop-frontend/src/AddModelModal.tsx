@@ -22,6 +22,7 @@ const PROVIDER_LABELS: Record<AiModelProvider, string> = {
   google: 'Google',
   cloudflare: 'Cloudflare Workers AI',
   ollama: 'Ollama',
+  'cf-proxy': 'CF AI Proxy',
 }
 
 // Placeholder hinting at the shape of each provider's API token.
@@ -31,6 +32,7 @@ const API_TOKEN_PLACEHOLDERS: Record<AiModelProvider, string> = {
   google: 'AIza...',
   cloudflare: 'Cloudflare API token',
   ollama: '(optional)',
+  'cf-proxy': 'cfp_...',
 }
 
 // Example used in the custom-model placeholders for providers that have no suggested models
@@ -161,6 +163,7 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
 
     const isOllama = selection?.provider === 'ollama'
     const isCloudflare = selection?.provider === 'cloudflare'
+    const isCfProxy = selection?.provider === 'cf-proxy'
     const showCredentials = !gatewayMode
 
     if (showCredentials && selection && !isOllama && !apiToken.trim()) {
@@ -173,6 +176,10 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
 
     if (showCredentials && isOllama && !apiUrl.trim()) {
       newErrors.apiUrl = 'Please enter the Ollama API URL'
+    }
+
+    if (showCredentials && isCfProxy && !apiUrl.trim()) {
+      newErrors.apiUrl = 'Please enter the proxy API URL (e.g., https://cf-ai-rate-proxy.example.workers.dev/v1)'
     }
 
     setErrors(newErrors)
@@ -218,6 +225,7 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
   const example = selection ? exampleModel(selection.provider) : null
   const isOllama = selection?.provider === 'ollama'
   const isCloudflare = selection?.provider === 'cloudflare'
+  const isCfProxy = selection?.provider === 'cf-proxy'
   const showCredentials = !gatewayMode
 
   // Group options by provider for rendering with visual separators.
@@ -317,6 +325,8 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
                   ? 'Optional for local Ollama access'
                   : isCloudflare
                   ? 'An API token with Workers AI Read + Edit permissions (in the dashboard: Workers AI > Use REST API > Create a Workers AI API Token)'
+                  : isCfProxy
+                  ? 'The Bearer token issued by the proxy admin panel (e.g., cfp_...)'
                   : `Your ${PROVIDER_LABELS[selection.provider]} API token for billing`
               }
               value={apiToken}
@@ -339,8 +349,21 @@ export default function AddModelModal({ visible, onCancel, onSuccess, authentica
             />
           )}
 
-          {/* Advanced Settings for non-Ollama, non-Cloudflare providers */}
-          {showCredentials && selection && !isOllama && !isCloudflare && (
+          {/* CF AI Proxy URL (always visible for cf-proxy) */}
+          {showCredentials && isCfProxy && (
+            <Input
+              label="Proxy API URL"
+              placeholder="https://cf-ai-rate-proxy.example.workers.dev/v1"
+              description="URL of the CF AI Rate Proxy endpoint (include the /v1 path)"
+              value={apiUrl}
+              onChange={(e) => { setApiUrl(e.target.value); setErrors(prev => ({ ...prev, apiUrl: '' })) }}
+              error={errors.apiUrl}
+              variant={errors.apiUrl ? 'error' : 'default'}
+            />
+          )}
+
+          {/* Advanced Settings for non-Ollama, non-Cloudflare, non-cf-proxy providers */}
+          {showCredentials && selection && !isOllama && !isCloudflare && !isCfProxy && (
             <Collapsible.Root
               open={advancedOpen}
               onOpenChange={setAdvancedOpen}

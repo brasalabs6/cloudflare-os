@@ -124,6 +124,10 @@ function catalogModel(provider: AiModelConfig["provider"], modelId: string): Mod
     case "google": return (GOOGLE_MODELS as Record<string, Model<Api>>)[modelId];
     case "cloudflare": return (CLOUDFLARE_WORKERS_AI_MODELS as Record<string, Model<Api>>)[modelId];
     case "ollama": return undefined;
+    case "cf-proxy":
+      // The proxy fronts Cloudflare Workers AI, so reuse its catalog for cost/compat metadata.
+      // Virtual models (e.g. "glm-5.2-cyber") have no catalog entry and synthesize with zero cost.
+      return (CLOUDFLARE_WORKERS_AI_MODELS as Record<string, Model<Api>>)[modelId];
     default: return undefined;
   }
 }
@@ -349,6 +353,13 @@ export function getModel(env: Cloudflare.Env, config: AiModelConfig,
     return getModelViaUserGateway(
         config, buildMetadata(initiator, options.metadata), options.userGateway,
         options.sessionAffinity);
+  }
+
+  // cf-proxy is always direct: it fronts a self-hosted proxy (cf-ai-rate-proxy-worker) that
+  // mediates Workers AI independently. AI Gateway cannot serve it, and the proxy holds its own
+  // upstream credentials, so gateway routing is neither possible nor needed.
+  if (config.provider === "cf-proxy") {
+    return getModelDirect(config, options.sessionAffinity);
   }
 
   // Otherwise: when a platform AI Gateway is configured, route through it (platform-funded free
@@ -587,6 +598,43 @@ function getModelDirect(config: AiModelConfig, sessionAffinity?: string): ModelH
         apiKey: config.apiToken,
         sessionAffinity,
       });
+    case "cf-proxy": {
+      // Self-hosted OpenAI-compatible proxy (cf-ai-rate-proxy-worker) that mediates Cloudflare
+      // Workers AI with rate limiting, retries, failover (GLM → Kimi), and virtual model variants
+      // (e.g. "glm-5.2-cyber"). The proxy speaks the Chat Completions API, so we route through
+      // pi's "openai-completions" stream — not "openai-responses", which the proxy does not
+      // implement. The proxy URL (including the /v1 path) comes from config.apiUrl; the proxy's
+      // own API key from config.apiToken. No accountId is needed — the proxy holds the upstream
+      // Cloudflare credentials as a Worker secret.
+      if (!config.apiUrl) {
+        throw new Error(
+            "This model requires a proxy API URL. Re-add it with the proxy endpoint " +
+            "(e.g., https://cf-ai-rate-proxy.example.workers.dev/v1).");
+      }
+      if (!config.apiToken) {
+        throw new Error(
+            "This model requires a proxy API key. Re-add it with the Bearer token " +
+            "issued by the proxy's admin panel.");
+      }
+      // Strip a trailing slash so the baseUrl is clean; pi appends "/chat/completions" itself.
+      const proxyBaseUrl = stripTrailingSlashes(config.apiUrl);
+      return makeHandle({
+        model: {
+          id: config.model,
+          name: catalog?.name ?? config.model,
+          api: "openai-completions",
+          provider: "cloudflare-workers-ai",
+          baseUrl: proxyBaseUrl,
+          reasoning: catalog?.reasoning ?? false,
+          input: catalog?.input ?? ["text"],
+          cost: catalog?.cost ?? ZERO_COST,
+          ...window,
+          compat: workersAiCompat(catalog),
+        },
+        apiKey: config.apiToken,
+        sessionAffinity,
+      });
+    }
     default:
       config.provider satisfies never;
       throw new Error(`Unknown provider "${config.provider}".`);
