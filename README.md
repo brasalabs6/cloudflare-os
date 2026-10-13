@@ -290,6 +290,7 @@ This is the **complete directory inventory** of `packages/`, plus the separately
 | [`packages/agent-runtime`](packages/agent-runtime/) | — | **Specs and plan only.** Grok Container/Sandbox runtime for Phase 1; no `package.json`, Worker, or deployable implementation yet. |
 
 <!-- package-inventory:end -->
+
 ## Developing
 
 When developing, you'll want to run the front-end and back-end as two separate commands in two terminals:
