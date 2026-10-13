@@ -484,3 +484,11 @@ Changes touching identity, token/stage state, public RPC, sharing/restricted dat
 ## 22. Coverage inventory and maintenance
 
 Each directory under packages/ has one SPECS.md. When creating or removing a package, update this inventory; remove specs belonging to deleted packages rather than leaving orphan documents. Current package specs cover all 32 modules, including bundled-blueprints, gitlab, gatekeeper-kit, x, observability, ui and workshop-evals. New security-sensitive features MUST document: entrypoints, authorities, persistent record ownership, user-visible success/failure paths, state transitions, replay/race defenses, required tests and deployment configuration. A Mermaid diagram is a design aid, not an independent substitute for those prose invariants.
+
+## 23. Proposed multiagent domain modules (documentation-only)
+
+The 2026-10-13 proposed multiagent architecture is documented in [Multiagent MCP Platform](docs/architecture/MULTIAGENT_MCP_PLATFORM.md), [domain contracts v1](docs/architecture/MULTIAGENT_MCP_CONTRACTS_V1.md), [security review](docs/architecture/MULTIAGENT_MCP_SECURITY.md) and [implementation plan / PDR traceability](docs/architecture/MULTIAGENT_MCP_IMPLEMENTATION_PLAN.md). ADRs [0004](docs/adr/0004-multiagent-domain-and-mcp-boundary.md) and [0005](docs/adr/0005-multiagent-data-and-delivery.md) are proposed pending review.
+
+The following new `packages/*/SPECS.md` entries define **future** modules only: `agent-directory`, `agent-goals-tasks`, `agent-mailbox`, `agent-memory`, `agent-continuity`, `agent-audit`, `agent-automation`, and `mcp-domain-gateway`. The new `workshop-frontend/src/features/multiagent/SPECS.md` describes a future UI feature. These directories contain no runnable implementation and MUST NOT be inferred to be Wrangler deployment units. Existing packages and deployed contracts remain unchanged.
+
+Any implementation MUST reuse Workshop workspace identity and Gatekeeper approval/observation policy, keep MCP server domain coordination separate from existing MCP client Gatekeepers, and preserve `ACP_CONTRACTS_V1.md` as the sole contract for managed harness session/run state. A task/event notification is not proof of remote execution. Until code and tests land, documentation statuses remain proposed, not delivered.
