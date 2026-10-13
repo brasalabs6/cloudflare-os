@@ -31,3 +31,8 @@ Required primitives:
 ## Tests and acceptance
 
 Unit tests cover partial frames, multiple frames, invalid UTF-8, malformed JSON, oversized payloads, duplicate IDs, timeouts, cancellation races, disconnect with outstanding requests, server requests, backpressure and unknown message types. Contract fixtures are required for Grok, codex-acp and OpenCode. Typecheck and tests must run through the repository's package tooling before a consumer imports this package.
+
+
+## Normative protocol contract
+
+Use [ACP_CONTRACTS_V1](../../docs/architecture/ACP_CONTRACTS_V1.md) sections 3, 5 and 6. Export validators for `RuntimeRequest`, `RuntimeResult`, `AgentEvent` and per-harness protocol fixtures. A complete implementation supplies actual JSON schema files, typed discriminated unions, examples, compatibility ranges and negative fixtures; this descriptive package spec alone is not sufficient. The Grok 1.0.50 probe used a version 1 initialize envelope; do not copy Hub's initialize blindly. Distinguish JSON-RPC wire IDs from platform event sequences and ACP session IDs. Test frames crossing chunk boundaries, invalid UTF-8, duplicate outstanding IDs, unknown notifications and cancelled operations with unknown side-effect outcome.
