@@ -650,6 +650,17 @@ export function sanitizeMessageFormatRefs(
 // collaborator roles.
 type SessionKind = CollaboratorRole | "owner";
 
+/** A transient per-run RPC callback: stream text through the existing chat subscriber. */
+class GrokTextSink extends NativeRpcTarget {
+  constructor(private readonly host: OverseerImpl, private readonly chatId: number) {
+    super();
+  }
+  async text(delta: string): Promise<void> {
+    if (typeof delta !== "string" || delta.length > 16_384) return;
+    this.host.emitChatStreamEvent(this.chatId, { type: "textDelta", delta });
+  }
+}
+
 class OverseerImpl implements AgentHooks {
   public storage: OverseerStorage;
   readonly logger: ReturnType<typeof createWorkshopLogger>;
@@ -7904,6 +7915,62 @@ class OverseerImpl implements AgentHooks {
     this.storage.blueprints.delete(record.id);
   }
 
+  /** Grok is a separate engine, never a replacement for the native runAgent path. */
+  markGrokChat(chatId: number): void {
+    const meta = this.getChatMetaOrThrow(chatId);
+    if (meta.activeAgent) throw new Error("GROK_CHAT_BUSY");
+    meta.engine = "grok";
+    this.storage.chatMeta.put(meta);
+  }
+
+  startGrokTurn(chatId: number, message: string): void {
+    if (!message.trim() || message.length > 65_536) throw new Error("GROK_INVALID_PROMPT");
+    const meta = this.getChatMetaOrThrow(chatId);
+    if (meta.engine !== "grok" || meta.activeAgent) {
+      throw new Error("GROK_CHAT_STATE_INVALID");
+    }
+    const author: AiChatAuthorInfo = {
+      type: "agent", id: "__cloudflare_grok__", name: "Grok Build"
+    };
+    meta.activeAgent = author;
+    this.storage.chatMeta.put(meta);
+    const operationId = crypto.randomUUID();
+    const scope = this.ctx.id.toString();
+    const sink = new GrokTextSink(this, chatId);
+    this.ctx.waitUntil((async () => {
+      try {
+        const service = (this.env as unknown as {
+          GROK_RUNTIME?: {
+            prompt(workspaceId: string, chatId: number, text: string,
+                   operationId: string, sink: GrokTextSink): Promise<{
+              status: string; text: string
+            }>
+          }
+        }).GROK_RUNTIME;
+        if (!service) throw new Error("GROK_RUNTIME_NOT_CONFIGURED");
+        const result = await service.prompt(scope, chatId, message, operationId, sink);
+        if (result.status === "SUCCEEDED") {
+          this.postAgentChatMessage(chatId, author, result.text || "(No text returned)");
+        } else {
+          this.postAgentErrorMessage(chatId, author, "Grok run " + result.status,
+                                     "GROK_RUN_NOT_COMPLETED");
+        }
+      } catch (err) {
+        const code = err instanceof Error ? err.message.slice(0, 120) : "GROK_RUNTIME_ERROR";
+        this.postAgentErrorMessage(chatId, author,
+          "Grok did not complete: " + code, "GROK_RUNTIME_ERROR");
+      } finally {
+        const current = this.storage.chatMeta.get(chatId);
+        if (current?.engine === "grok") {
+          delete current.activeAgent;
+          current.lastActive = this.getChatTimestamp();
+          this.storage.chatMeta.put(current);
+        }
+        sink[Symbol.dispose]?.();
+      }
+    })());
+  }
+
   postAgentChatMessage(chatId: number, author: AiChatAuthorInfo, message: string) {
     let meta = this.storage.chatMeta.get(chatId);
     if (!meta) {
@@ -11500,6 +11567,30 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
     }));
   }
 
+  async newGrokChat(initialMessage: string): Promise<number> {
+    if (!initialMessage.trim() || initialMessage.length > 65_536) {
+      throw new Error("GROK_INVALID_PROMPT");
+    }
+    const userMeta = await retryOnDoReset(
+      () => this.#clientUser.getChatContext(null), this.impl.logger);
+    const chatId = await this.impl.newChat(this.#clientUser, userMeta, initialMessage);
+    this.impl.markGrokChat(chatId);
+    this.impl.startGrokTurn(chatId, initialMessage);
+    return chatId;
+  }
+
+  async sendGrokMessage(chatId: number, message: string): Promise<void> {
+    if (!message.trim() || message.length > 65_536) {
+      throw new Error("GROK_INVALID_PROMPT");
+    }
+    const meta = this.impl.getChatMetaOrThrow(chatId);
+    if (meta.engine !== "grok") throw new Error("GROK_CHAT_ENGINE_MISMATCH");
+    const userMeta = await retryOnDoReset(
+      () => this.#clientUser.getChatContext(null), this.impl.logger);
+    await this.impl.sendChatMessage(this.#clientUser, userMeta, chatId, message);
+    this.impl.startGrokTurn(chatId, message);
+  }
+
   async newChat(initialMessage: string | SlashCommandRequest, chosenModelId: string | null,
                 capsules?: CapsuleSpecifier[], attachments?: ChatAttachmentHandle[],
                 formats?: MessageFormatRef[]): Promise<number> {
@@ -11624,6 +11715,14 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
   }
 
   async stopAgent(chatId: number): Promise<void> {
+    const meta = this.impl.storage.chatMeta.get(chatId);
+    if (meta?.engine === "grok") {
+      const service = (this.impl.env as unknown as {
+        GROK_RUNTIME?: { cancel(workspaceId: string, chatId: number): Promise<void> }
+      }).GROK_RUNTIME;
+      await service?.cancel(this.impl.ctx.id.toString(), chatId);
+      return;
+    }
     this.impl.cancelAgent(chatId);
   }
 
@@ -12153,6 +12252,9 @@ class UseOverseerInterface extends RpcTarget implements Overseer {
       _subscriber: RpcStub<AiChatSubscriber>, _startAfter?: Date): Promise<RpcStub<{}>> {
     this.#deny();
   }
+  async newGrokChat(_message: string): Promise<number> { this.#deny(); }
+  async sendGrokMessage(_chatId: number, _message: string): Promise<void> { this.#deny(); }
+
   async newChat(_initialMessage: string | SlashCommandRequest, _modelId: string | null,
                  _capsules?: CapsuleSpecifier[], _attachments?: ChatAttachmentHandle[]): Promise<number> {
     this.#deny();

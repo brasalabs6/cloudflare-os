@@ -20,7 +20,8 @@ function assertText(text: string) {
 
 /** Private Worker service RPC; no HTTP route grants access to a container. */
 export class GrokRuntime extends WorkerEntrypoint<Env> {
-  async prompt(workspaceId: string, chatId: number, prompt: string, operationId: string) {
+  async prompt(workspaceId: string, chatId: number, prompt: string, operationId: string,
+               sink?: { text(delta: string): Promise<void> }) {
     if (!workspaceId || workspaceId.length > 160 ||
         !Number.isSafeInteger(chatId) || chatId < 0 ||
         !/^[a-zA-Z0-9_:.-]{8,160}$/.test(operationId)) {
@@ -30,7 +31,7 @@ export class GrokRuntime extends WorkerEntrypoint<Env> {
     // The caller is the trusted Workshop service binding. Do not expose this
     // method by HTTP or accept a browser token as proof of Workspace access.
     const name = workspaceId + ":" + chatId;
-    return this.ctx.exports.GrokSandbox.getByName(name).prompt(prompt, operationId);
+    return this.ctx.exports.GrokSandbox.getByName(name).prompt(prompt, operationId, sink);
   }
 
   async cancel(workspaceId: string, chatId: number) {
@@ -189,7 +190,8 @@ export class GrokSandbox extends DurableObject<Env> {
     this.peer = peer;
   }
 
-  async prompt(text: string, operationId: string): Promise<PromptResult> {
+  async prompt(text: string, operationId: string,
+               sink?: { text(delta: string): Promise<void> }): Promise<PromptResult> {
     assertText(text);
     if (this.inFlight) throw new Error("GROK_PROMPT_ALREADY_ACTIVE");
     const key = "op:" + operationId;
@@ -205,10 +207,12 @@ export class GrokSandbox extends DurableObject<Env> {
         Array.from(new Uint8Array(x)).map(v=>v.toString(16).padStart(2,"0")).join("")));
     this.inFlight = operationId;
     let output = "";
+    const deliveries: Promise<void>[] = [];
     try {
       await this.connect();
       this.peer!.onText = (delta: string) => {
         output += delta;
+        if (sink) deliveries.push(sink.text(delta).catch(() => { /* browser disconnected */ }));
         if (output.length > MAX_RESPONSE_CHARS) {
           this.peer?.abort(new Error("GROK_RESPONSE_TOO_LARGE"));
         }
@@ -216,6 +220,7 @@ export class GrokSandbox extends DurableObject<Env> {
       const result = await this.peer!.request("session/prompt", {
         sessionId: this.acpId, prompt: [{ type: "text", text }]
       });
+      await Promise.all(deliveries);
       const final: PromptResult = {
         status: result?.stopReason === "cancelled" ? "CANCELLED" : "SUCCEEDED",
         text: output
