@@ -20,3 +20,8 @@ Normalize ACP initialization, session creation, prompt, tool events, permissions
 ## Tests and acceptance
 
 Real Cloudflare sandbox tests must cover initialize/new/prompt/events/cancel, file tool permissions, auth failure and expiry, no-browser behavior, reconnect, resource limits, egress policy and secret scans. Codex acceptance is independent from Grok acceptance.
+
+
+## Version-specific executable contract
+
+Canonical shape: [ACP_CONTRACTS_V1](../../docs/architecture/ACP_CONTRACTS_V1.md) §§2–6,10. Production manifest must contain `codexAcPBridgeVersion`, `codexCliVersion`, `bridgeBinarySha256`, `imageDigest`, `initializeRequestSchemaId`, `supportedProtocolRange`, `authStrategy`, `providerRoutes` and `fixtureSha256`. Use `codex-acp` with reviewed Codex App Server compatibility; never expose App Server protocol in Workshop RPC. Require sandbox fixture for native permission requests, tool events, cancellation and `session/load` behavior if supported; unsupported features return typed `UNSUPPORTED_CAPABILITY`. Explicitly record successful unattended, revocable authentication strategy; without that, keep release in CANDIDATE and disallow traffic. Hub's Codex App Server implementation is a reference, not evidence of ACP bridge production readiness.
