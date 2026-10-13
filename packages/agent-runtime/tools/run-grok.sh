@@ -18,4 +18,6 @@ update-ca-certificates >/dev/null 2>&1
 cp /etc/ssl/certs/ca-certificates.crt "$bundle"
 chown node:node "$bundle"
 chmod 0600 "$bundle"
-exec gosu node sh -c 'exec grok --no-auto-update agent --no-leader --model cf-qwen3.8-27b serve --bind 0.0.0.0:2419'
+# CLI stdout/stderr can include private tool activity; do not pipe raw transcript
+# to Cloudflare container logs.
+exec gosu node sh -c 'exec grok --no-auto-update agent --no-leader --model cf-qwen3.8-27b serve --bind 0.0.0.0:2419 >/dev/null 2>&1'
