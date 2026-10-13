@@ -90,3 +90,10 @@ One front-end for native Workshop, ACP Grok/Codex/OpenCode and future native pro
 ### Acceptance
 
 A change is done only with strict schemas, migrated/verified data shapes, tests for idempotent admission, partial protocol messages, replay and crash/reconciliation, deny-by-default resource grants, source provenance and staging E2E for deployed services. Verify that core Workshop Code Mode and Gatekeeper simulation tests remain green.
+
+
+## Cross-module agent-platform boundary audit (2026-10-13)
+
+This package is a preexisting authority/consumer of agent-platform behavior. Refer to the [source-grounded no-overlap audit](../../../../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md) and root SPECS §23 before accepting any overlapping implementation. **Specific requirement:** Frontend nested feature renders native/CLI sessions and task/subagent projections through existing Workshop RpcContext; it MUST NOT create a second auth, chat event storage, approval UI authority, device notifier or direct runtime socket bypass. Use native/CLI source-provenance events and explicit unsupported capabilities.
+
+Any downstream addition needs existing consumer regression tests plus scoped-auth/idempotency/race tests; a documentation reference is not proof of runtime implementation.

@@ -66,3 +66,10 @@ packages/workshop-frontend/src/features/agent-sessions/
 ## Critério final
 
 Compatibilidade com motor nativo Workshop e Gatekeepers existentes; detalhes específicos de ACP/native expostos por extensões tipadas sem quebrar um front-end único. **Sem comprovação de deploy ainda.**
+
+
+## Cross-module agent-platform boundary audit (2026-10-13)
+
+This package is a preexisting authority/consumer of agent-platform behavior. Refer to the [source-grounded no-overlap audit](../../../../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md) and root SPECS §23 before accepting any overlapping implementation. **Specific requirement:** Before coding Agent dashboard, characterize existing ChatInterface, useActions/useAutoApproval, current ActivityNotifications, Kumo/@gadgets/ui and current route tree. Wire tasks and native chat correlation without rewriting native UI or exposing private reasoning. Add real browser E2E for rejected tool approval, subagent display, budget/pause and page reload.
+
+Any downstream addition needs existing consumer regression tests plus scoped-auth/idempotency/race tests; a documentation reference is not proof of runtime implementation.
