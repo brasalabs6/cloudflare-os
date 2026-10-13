@@ -40,3 +40,8 @@ Private API contracts must cover create, status, prompt, cancel, event replay, c
 ## Tests and acceptance
 
 Test concurrent create/prompt/cancel, idempotency conflicts, stale generations, supervisor crash, container exit, partial stream, DO alarm/lease recovery, replay after browser reload, event retention, checkpoint checksum failure, restore in a fresh container, cross-session ticket rejection and hard quota enforcement. Add real Cloudflare staging E2E for all three harnesses.
+
+
+## Normative persisted contract and sequence
+
+Follow [ACP_CONTRACTS_V1](../../docs/architecture/ACP_CONTRACTS_V1.md) sections 1-5, 8 and 9. Implement DO SQLite logical records `Session`, `Run`, `Operation`, `AgentEvent`, `Approval`, `Checkpoint` with documented uniqueness/transaction invariants. Implement the independent Session Directory as **routing only**, not a second run-state authority. Define migrations before deployment. Every accepted prompt writes intent transactionally before dispatch and never retries an ambiguous physical execution automatically. A persisted release resolves to a configured immutable runtime target; protect pinned sessions on rollback. Implement replay with `retentionFloor` and CURSOR_EXPIRED, not a silent empty list. Recovered files do not prove restored ACP process state.
