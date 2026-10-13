@@ -3821,13 +3821,11 @@ function ChatInterface({
           bumpChatListVersion();
           setChatListReady(true);
 
-          const modelsWithGrok = [...models.filter((m) => m.id !== GROK_ENGINE_MODEL.id),
-            GROK_ENGINE_MODEL];
-          setAvailableModels(modelsWithGrok);
-
-          // Adding Grok as an opt-in engine must not change a native model
-          // default (including deployments with no enabled native models).
-          setSelectedModel(getStoredSelectedModel(models));
+          // The server advertises Grok only when a trusted private runtime
+          // binding exists. Do not offer a broken option to native-only users.
+          setAvailableModels(models);
+          setSelectedModel(getStoredSelectedModel(
+            models.filter(model => model.id !== GROK_ENGINE_MODEL.id)));
 
           forceUpdate();
         }

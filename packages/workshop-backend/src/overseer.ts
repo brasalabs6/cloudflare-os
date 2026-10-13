@@ -11366,7 +11366,16 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
   }
 
   async listModels(): Promise<AiChatAuthorInfo[]> {
-    return retryOnDoReset(() => this.#clientUser.listModels(), this.impl.logger);
+    const models = await retryOnDoReset(
+      () => this.#clientUser.listModels(), this.impl.logger);
+    // Expose Grok as opt-in only when the private service binding is deployed.
+    // Existing customer releases without a Container stay native-only.
+    const grok = (this.impl.env as unknown as { GROK_RUNTIME?: unknown }).GROK_RUNTIME;
+    if (!grok) return models;
+    return [...models.filter(model => model.id !== "__cloudflare_grok__"), {
+      type: "agent", id: "__cloudflare_grok__",
+      name: "Grok Build (Cloudflare Sandbox)"
+    }];
   }
 
   async listSlashCommands(): Promise<SlashCommandChoice[]> {
@@ -11568,6 +11577,9 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
   }
 
   async newGrokChat(initialMessage: string): Promise<number> {
+    if (!(this.impl.env as unknown as { GROK_RUNTIME?: unknown }).GROK_RUNTIME) {
+      throw new Error("GROK_RUNTIME_NOT_CONFIGURED");
+    }
     if (!initialMessage.trim() || initialMessage.length > 65_536) {
       throw new Error("GROK_INVALID_PROMPT");
     }
