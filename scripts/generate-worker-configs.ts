@@ -101,17 +101,6 @@ export async function renderWorkerConfig(dir: string): Promise<string> {
 export async function generateWorkerConfigs({ check }: { check: boolean }): Promise<string[]> {
   const dirs = workerConfigDirs();
   const rendered = await Promise.all(dirs.map(renderWorkerConfig));
-  // Temporary diagnostic for validating the new Worker config in CI; remove after syncing.
-  if (check) {
-    dirs.forEach((dir, i) => {
-      if (relative(ROOT, dir) === "packages/agent-runtime" ||
-          relative(ROOT, dir) === "packages/workshop-backend") {
-        console.log("GROK_EXPECTED_GENERATED_CONFIG_BEGIN " + relative(ROOT, dir));
-        console.log(rendered[i]);
-        console.log("GROK_EXPECTED_GENERATED_CONFIG_END");
-      }
-    });
-  }
   return dirs.flatMap((dir, i) => {
     const path = join(dir, GENERATED_NAME);
     if (existsSync(path) && readFileSync(path, "utf8") === rendered[i]) return [];
