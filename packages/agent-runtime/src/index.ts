@@ -208,18 +208,33 @@ export class GrokSandbox extends DurableObject<Env> {
   async prompt(text: string, operationId: string,
                sink?: { text(delta: string): Promise<void> }): Promise<PromptResult> {
     assertText(text);
-    if (this.inFlight) throw new Error("GROK_PROMPT_ALREADY_ACTIVE");
+    // Admission must be atomic: concurrent DO RPCs can interleave while
+    // awaiting storage even when they belong to the same session ID.
     const key = "op:" + operationId;
-    const prior = await this.ctx.storage.get<PromptResult>(key);
-    if (prior) return prior;
-    if (await this.ctx.storage.get<string>("intent:" + operationId)) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    const hash = Array.from(new Uint8Array(digest))
+      .map(v => v.toString(16).padStart(2, "0")).join("");
+    const admission = await this.ctx.storage.transaction(async tx => {
+      const acceptedHash = await tx.get<string>("intent:" + operationId);
+      if (acceptedHash && acceptedHash !== hash) return "IDEMPOTENCY_CONFLICT";
+      const prior = await tx.get<PromptResult>(key);
+      if (prior) return "ALREADY_FINISHED";
+      if (acceptedHash) return "OUTCOME_UNKNOWN";
+      if (await tx.get<string>("activeOperation")) return "BUSY";
+      await tx.put("activeOperation", operationId);
+      await tx.put("intent:" + operationId, hash);
+      return "ACCEPTED";
+    });
+    if (admission === "IDEMPOTENCY_CONFLICT") throw new Error("GROK_IDEMPOTENCY_CONFLICT");
+    if (admission === "BUSY") throw new Error("GROK_PROMPT_ALREADY_ACTIVE");
+    if (admission === "OUTCOME_UNKNOWN") {
       throw new Error("GROK_PREVIOUS_PROMPT_OUTCOME_UNKNOWN");
     }
-    // Exactly one attempted external dispatch per operation; never replay
-    // after ambiguous timeout or DO restart.
-    await this.ctx.storage.put("intent:" + operationId, await crypto.subtle.digest(
-      "SHA-256", new TextEncoder().encode(text)).then(x =>
-        Array.from(new Uint8Array(x)).map(v=>v.toString(16).padStart(2,"0")).join("")));
+    if (admission === "ALREADY_FINISHED") {
+      const previous = await this.ctx.storage.get<PromptResult>(key);
+      if (!previous) throw new Error("GROK_RESULT_MISSING");
+      return previous;
+    }
     this.inFlight = operationId;
     let output = "";
     const deliveries: Promise<void>[] = [];
@@ -249,6 +264,13 @@ export class GrokSandbox extends DurableObject<Env> {
       throw e;
     } finally {
       this.inFlight = undefined;
+      // Clearing the active slot does not authorize retry of this operation:
+      // the persisted intent still fences an ambiguous external dispatch.
+      await this.ctx.storage.transaction(async tx => {
+        if (await tx.get<string>("activeOperation") === operationId) {
+          await tx.delete("activeOperation");
+        }
+      });
     }
   }
 
