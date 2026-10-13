@@ -53,3 +53,12 @@ packages/gatekeeper-mcp-portal/
 - [ ] Registrar evidência source→target→tests na [matriz](../../docs/architecture/ACP_MIGRATION_MATRIX.md) e no [user ledger](../../docs/architecture/USER_INPUT_LEDGER.md), distinguindo o que só foi planejado.
 
 **DoD:** todas etapas relevantes com testes e evidência; nenhuma API pública/MCP nova sem autorização e revisão de contrato.
+
+
+## No-overlap integration correction (2026-10-13)
+
+Reference: [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS §23. **Owner:** Admin Portal MCP already owns selected upstream serverId, live vetted/unenlisted trust policy, credential generation and endpoint repoint. Agent tools cannot create cross-server grants or leak preissued token.
+
+**Gate before implementation:** Test explicit per-server facet and read/action policy under agent tool registry and Task grants, including repoint and trust revoke races.
+
+Any new agent-platform feature must preserve existing approved observations/actions, tenant scopes, Cap'n Web contract and consumer regressions. A documented proposed integration is not deployed functionality.

@@ -195,3 +195,12 @@ Generic MCP Gatekeeper already imports untrusted user-selected endpoints. Agent 
 ### Definition of done
 
 Source→target traceability, schema fixtures, existing test parity and new negative boundary tests, authenticated staging proof for new cross-worker behavior and migration-aware rollback. **Detailed steps:** [plan.md](./plan.md).
+
+
+## No-overlap integration correction (2026-10-13)
+
+Reference: [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS §23. **Owner:** Generic BYO MCP already owns connected endpoint credentials, exact endpoint identity, owner-only resource sharing, mcp-shared tool classification and staged actions. Tool catalog projections must not bypass these gates.
+
+**Gate before implementation:** Test tool import by Native Engine and ACP via granted Gatekeeper, not direct MCP client. Revocation and unvetted annotation tests mandatory.
+
+Any new agent-platform feature must preserve existing approved observations/actions, tenant scopes, Cap'n Web contract and consumer regressions. A documented proposed integration is not deployed functionality.

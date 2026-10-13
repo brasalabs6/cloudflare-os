@@ -212,3 +212,12 @@ A portal-connected account can multiplex multiple upstream servers, but each Gad
 ### Definition of done
 
 Source→target traceability, schema fixtures, existing test parity and new negative boundary tests, authenticated staging proof for new cross-worker behavior and migration-aware rollback. **Detailed steps:** [plan.md](./plan.md).
+
+
+## No-overlap integration correction (2026-10-13)
+
+Reference: [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS §23. **Owner:** Admin Portal MCP already owns selected upstream serverId, live vetted/unenlisted trust policy, credential generation and endpoint repoint. Agent tools cannot create cross-server grants or leak preissued token.
+
+**Gate before implementation:** Test explicit per-server facet and read/action policy under agent tool registry and Task grants, including repoint and trust revoke races.
+
+Any new agent-platform feature must preserve existing approved observations/actions, tenant scopes, Cap'n Web contract and consumer regressions. A documented proposed integration is not deployed functionality.

@@ -53,3 +53,12 @@ packages/router/
 - [ ] Registrar evidência source→target→tests na [matriz](../../docs/architecture/ACP_MIGRATION_MATRIX.md) e no [user ledger](../../docs/architecture/USER_INPUT_LEDGER.md), distinguindo o que só foi planejado.
 
 **DoD:** todas etapas relevantes com testes e evidência; nenhuma API pública/MCP nova sem autorização e revisão de contrato.
+
+
+## No-overlap integration correction (2026-10-13)
+
+Reference: [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS §23. **Owner:** Existing router handles /api and /gatekeeper plus assets/email. New MCP/HTTP ingress requires opt-in explicit service binding and must not redirect through trusted ExternalMessageGateway/callerEmail; backend/API authentication remains authoritative.
+
+**Gate before implementation:** Before code, define routes /agent-api/v1 and /agent-mcp scoped to new Gateway, review generated cloudflare.config.ts+manifest golden; test prefix conflicts and unauthorized public callers.
+
+Any new agent-platform feature must preserve existing approved observations/actions, tenant scopes, Cap'n Web contract and consumer regressions. A documented proposed integration is not deployed functionality.

@@ -403,3 +403,12 @@ Integrate new feature-owned agent management into existing SPA navigation and Ca
 ### Definition of done
 
 Source→target traceability, schema fixtures, existing test parity and new negative boundary tests, authenticated staging proof for new cross-worker behavior and migration-aware rollback. **Detailed steps:** [plan.md](./plan.md).
+
+
+## No-overlap integration correction (2026-10-13)
+
+Reference: [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS §23. **Owner:** The SPA already owns login/RpcContext, chat, action approvals, notifications, resource routing and Kumo UI. Unified Agent views are additive feature slices not new identity/approval client.
+
+**Gate before implementation:** Build AgentDefinition/task screens against current AuthenticatedApi, reuse existing tool/Gatekeeper approvals and accessible shared components; preserve old ChatInterface, Workpieces, Connections and notification UX.
+
+Any new agent-platform feature must preserve existing approved observations/actions, tenant scopes, Cap'n Web contract and consumer regressions. A documented proposed integration is not deployed functionality.

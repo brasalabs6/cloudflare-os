@@ -53,3 +53,12 @@ packages/workshop-frontend/
 - [ ] Registrar evidência source→target→tests na [matriz](../../docs/architecture/ACP_MIGRATION_MATRIX.md) e no [user ledger](../../docs/architecture/USER_INPUT_LEDGER.md), distinguindo o que só foi planejado.
 
 **DoD:** todas etapas relevantes com testes e evidência; nenhuma API pública/MCP nova sem autorização e revisão de contrato.
+
+
+## No-overlap integration correction (2026-10-13)
+
+Reference: [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS §23. **Owner:** The SPA already owns login/RpcContext, chat, action approvals, notifications, resource routing and Kumo UI. Unified Agent views are additive feature slices not new identity/approval client.
+
+**Gate before implementation:** Build AgentDefinition/task screens against current AuthenticatedApi, reuse existing tool/Gatekeeper approvals and accessible shared components; preserve old ChatInterface, Workpieces, Connections and notification UX.
+
+Any new agent-platform feature must preserve existing approved observations/actions, tenant scopes, Cap'n Web contract and consumer regressions. A documented proposed integration is not deployed functionality.
