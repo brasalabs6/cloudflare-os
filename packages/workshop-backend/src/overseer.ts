@@ -11641,6 +11641,12 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
   }
 
   async deleteChat(chatId: number): Promise<void> {
+    if (this.impl.storage.chatMeta.get(chatId)?.engine === "grok") {
+      const service = (this.impl.env as unknown as {
+        GROK_RUNTIME?: { cancel(workspaceId: string, chatId: number): Promise<void> }
+      }).GROK_RUNTIME;
+      if (service) await service.cancel(this.impl.ctx.id.toString(), chatId);
+    }
     let startedAt = Date.now();
     let response = this.impl.storage.gadgetResponseDeliveries.undeliveredByChatId.get(chatId);
     if (response?.status === "waiting") {
@@ -11730,6 +11736,9 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
   }
 
   async retryAgent(chatId: number, modelId: string): Promise<void> {
+    if (this.impl.getChatMetaOrThrow(chatId).engine === "grok") {
+      throw new Error("GROK_RETRY_UNSUPPORTED_USE_NEW_MESSAGE");
+    }
     let userMeta = await retryOnDoReset(
         () => this.#clientUser.getChatContext(modelId), this.impl.logger);
 
