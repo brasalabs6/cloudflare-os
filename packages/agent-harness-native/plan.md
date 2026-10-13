@@ -75,3 +75,12 @@ Existing chat/AgentSpawner tool parity, callbacks queued behind turn, compaction
 
 **Done only when** every checked item has code and test links, plus an actual release/deploy reference if this package produces a Worker. No long-running autonomous loop or public MCP API is "done" based solely on mocks.
 
+
+
+## Source audit correction / mandatory no-overlap gate — 2026-10-13
+
+**Governing evidence:** [32 existing module audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS.md §23, and current executable source. **Boundary:** The native adapter is a thin bridge next to Overseer; it must not execute runAgent from outside its authenticated AgentHooks context, create new chat/compaction/worktree stores, or override callable callback semantics. A spawnCallable queue ACK does NOT imply completed result.
+
+**Implementation ordering:** Before implementation: capture AgentSpawnerBinding.d.ts true shape, Overseer deliverAgentCallback and #runAgentTurn; map native chat IDs and event sequences with no destructive migration; run parity tests for callbacks, step barrier, private modelData, compaction, observer ACL.
+
+**Blockers:** no executable implementation until existing behavior is characterized; module files in this directory are currently planning documents only. For every feature, record source/target authority, typed schema, security negative test, crash/idempotency case and relevant integration evidence. If a proposed API duplicates current authority, revise the proposal first instead of implementing a duplicate.

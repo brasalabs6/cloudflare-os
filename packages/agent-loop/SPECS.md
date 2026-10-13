@@ -66,3 +66,12 @@ Attach source commit/paths and target commit/tests to the [migration matrix](../
 
 [Detailed per-package plan](./plan.md) contains ordered work, dependency gates, source extraction, migrations, verification and rollout. All plan checkboxes start OPEN; this document does not imply implementation.
 
+
+
+## Source audit correction / mandatory no-overlap gate — 2026-10-13
+
+**Governing evidence:** [32 existing module audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS.md §23, and current executable source. **Boundary:** This is a bounded *outer task continuation strategy library*, not a second pi-agent-core inner tool loop and not a cron/scheduler Worker. Existing runAgentLoopContinue stays in workshop-backend; existing ScheduleDriver owns recurrence and its retry/timezone rules.
+
+**Implementation ordering:** Before implementation: characterize native pi-tool loop and Scheduler; define maxStepsPerWake/maxIterations/termination budget; implement only pure LoopDecision and Task DO alarm continuation with fake-clock tests; forbid local while(true) infinite workers.
+
+**Blockers:** no executable implementation until existing behavior is characterized; module files in this directory are currently planning documents only. For every feature, record source/target authority, typed schema, security negative test, crash/idempotency case and relevant integration evidence. If a proposed API duplicates current authority, revise the proposal first instead of implementing a duplicate.
