@@ -1,0 +1,13 @@
+# Adapted from Grokbot PR #1. The API key is a non-secret placeholder.
+[models]
+default = "cf-qwen3.8-27b"
+default_reasoning_effort = "low"
+
+[model."cf-qwen3.8-27b"]
+model = "@cf/qwen/qwen3.8-27b"
+base_url = "https://cf-ai-rate-proxy.brasaimainstream.workers.dev/v1"
+api_backend = "chat_completions"
+api_key = "grok-runtime-internal-placeholder"
+context_window = 262144
+max_completion_tokens = 16384
+stream_tool_calls = true
