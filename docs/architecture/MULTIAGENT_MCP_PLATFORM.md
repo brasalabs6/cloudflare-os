@@ -43,7 +43,7 @@ flowchart TB
   RT --> ACC
   N --> ACC
   ACC --> UI
-  OBS[Existing Observability] -.redacted telemetry.-> ACC
+  ACC -.redacted telemetry.-> OBS[Existing Observability]
 ```
 
 **Important:** this diagram shows intended wiring; runtime components labelled specified are not yet deployed. Gatekeeper access is capability-scoped, not a blanket one-hop grant from an HTTP token. The Context↔Memory link is authorized read/optional human-reviewed promotion, not raw cross-DO writes. Observability is diagnostic and does not inject canonical state into ACC.
