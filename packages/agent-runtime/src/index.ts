@@ -18,7 +18,13 @@ function assertText(text: string) {
 }
 
 /** Private Worker service RPC; no HTTP route grants access to a container. */
-export class GrokRuntime extends WorkerEntrypoint<Env> {
+export default class GrokRuntime extends WorkerEntrypoint<Env> {
+  // The default WorkerEntrypoint is the only service-binding RPC ingress.
+  // There is deliberately no public HTTP API for the Grok sandbox.
+  fetch(): Response {
+    return Response.json({ error: "PRIVATE_WORKER" }, { status: 404 });
+  }
+
   async prompt(workspaceId: string, chatId: number, prompt: string, operationId: string,
                sink?: { text(delta: string): Promise<void> }) {
     if (!workspaceId || workspaceId.length > 160 ||
@@ -256,8 +262,3 @@ export class GrokSandbox extends DurableObject<Env> {
   }
 }
 
-export default {
-  fetch() {
-    return Response.json({ error: "PRIVATE_WORKER" }, { status: 404 });
-  }
-} satisfies ExportedHandler<Env>;
