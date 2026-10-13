@@ -2779,6 +2779,14 @@ export interface Overseer extends RpcTarget {
    * the transcript can draw it as a chip. Display only -- what the agent reads is the noun, which
    * is already in the text.
    */
+  /** Start a Grok Build conversation inside an isolated Cloudflare Container.
+   * The existing Overseer keeps the canonical chat history and caller ACL.
+   * The sandbox exposes no public control endpoint. */
+  newGrokChat(initialMessage: string): Promise<number>;
+
+  /** Continue an existing Grok chat; callers cannot convert native chats. */
+  sendGrokMessage(chatId: number, message: string): Promise<void>;
+
   newChat(initialMessage: string | SlashCommandRequest, modelId: string | null,
           capsules?: CapsuleSpecifier[], attachments?: ChatAttachmentHandle[],
           formats?: MessageFormatRef[]): Promise<number>;
@@ -3094,6 +3102,8 @@ export interface Overseer extends RpcTarget {
 
 export type AiChatMetadata = {
   id: number,
+  /** Absent means the existing pi-agent-core engine. Grok is explicit per chat. */
+  engine?: "native" | "grok",
   title: string,
   started: Date,
   lastActive: Date,

@@ -44,6 +44,12 @@
       "binding": "LOADER"
     }
   ],
+  "services": [
+    {
+      "binding": "GROK_RUNTIME",
+      "service": "agent-runtime"
+    }
+  ],
   "build": {
     "command": "pnpm run build:worker",
     "watch_dir": "src"

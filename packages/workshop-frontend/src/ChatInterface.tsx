@@ -2651,6 +2651,10 @@ function getOrCreateProvisionalToolCall(
   return toolCall;
 }
 
+const GROK_ENGINE_MODEL: AiChatAuthorInfo = {
+  id: "__cloudflare_grok__", type: "agent", name: "Grok Build (Cloudflare Sandbox)"
+};
+
 function ChatInterface({
   workspaceId,
   overseer,
@@ -3353,12 +3357,16 @@ function ChatInterface({
   // Update selected model when switching chats
   useEffect(() => {
     if (selectedChatId === null) {
-      setSelectedModel(getStoredSelectedModel(availableModels));
+      setSelectedModel(getStoredSelectedModel(
+        availableModels.filter(model => model.id !== GROK_ENGINE_MODEL.id)));
     } else {
       // An existing thread takes its active agent's model, else the one that last spoke.
-      setSelectedModel(fallbackToStoredModelSelection(chatAgent?.id ?? null, availableModels));
+      setSelectedModel(currentChatMetadata?.engine === "grok"
+        ? GROK_ENGINE_MODEL.id
+        : fallbackToStoredModelSelection(chatAgent?.id ?? null,
+            availableModels.filter(model => model.id !== GROK_ENGINE_MODEL.id)));
     }
-  }, [selectedChatId, availableModels, chatAgent?.id]);
+  }, [selectedChatId, availableModels, chatAgent?.id, currentChatMetadata?.engine]);
 
   // Keep the ref in sync with selectedChatId state
   useEffect(() => {
@@ -3813,9 +3821,11 @@ function ChatInterface({
           bumpChatListVersion();
           setChatListReady(true);
 
+          // The server advertises Grok only when a trusted private runtime
+          // binding exists. Do not offer a broken option to native-only users.
           setAvailableModels(models);
-
-          setSelectedModel(getStoredSelectedModel(models));
+          setSelectedModel(getStoredSelectedModel(
+            models.filter(model => model.id !== GROK_ENGINE_MODEL.id)));
 
           forceUpdate();
         }
@@ -4000,19 +4010,26 @@ function ChatInterface({
     try {
       if (selectedChatId === null) {
         // Create a new chat (with optional capsules).
-        const newChatId = await overseer.newChat(
-            message, model, capsules, attachments, formats);
+        const newChatId = model === GROK_ENGINE_MODEL.id
+          ? (typeof message === "string" && !(capsules?.length || attachments?.length)
+              ? await overseer.newGrokChat(message)
+              : (() => { throw new Error("Grok phase 1 supports text-only prompts"); })())
+          : await overseer.newChat(message, model, capsules, attachments, formats);
         onNavigateToChatRef.current(newChatId);
       } else {
         // Send message to existing chat.
-        await overseer.sendChatMessage(
-          selectedChatId,
-          message,
-          model,
-          capsules || undefined,
-          attachments || undefined,
-          formats,
-        );
+        if (currentChatMetadata?.engine === "grok") {
+          if (typeof message !== "string" || capsules?.length || attachments?.length) {
+            throw new Error("Grok phase 1 supports text-only prompts");
+          }
+          await overseer.sendGrokMessage(selectedChatId, message);
+        } else if (model === GROK_ENGINE_MODEL.id) {
+          throw new Error("Create a new Grok conversation to switch engines");
+        } else {
+          await overseer.sendChatMessage(
+            selectedChatId, message, model, capsules || undefined,
+            attachments || undefined, formats);
+        }
       }
     } catch (err) {
       if (!logRpcFailure("Failed to send message:", err, { reportSite: "chat.send" })) {
@@ -4038,8 +4055,11 @@ function ChatInterface({
     if (!message && (!attachments || attachments.length === 0)) return;
     const model = modelId !== undefined ? modelId : selectedModel;
     try {
-      const newChatId = await overseer.newChat(
-          message, model, capsules, attachments, formats);
+      const newChatId = model === GROK_ENGINE_MODEL.id
+        ? (typeof message === "string" && !(capsules?.length || attachments?.length)
+            ? await overseer.newGrokChat(message)
+            : (() => { throw new Error("Grok phase 1 supports text-only prompts"); })())
+        : await overseer.newChat(message, model, capsules, attachments, formats);
       onNavigateToChatRef.current(newChatId);
     } catch (err) {
       if (!logRpcFailure("Failed to create new chat:", err, { reportSite: "chat.new" })) {
@@ -4055,6 +4075,10 @@ function ChatInterface({
 
   // Handle model change
   const handleModelChange = (modelId: string | null) => {
+    if (currentChatMetadata?.engine === "grok" && modelId !== GROK_ENGINE_MODEL.id) {
+      toasts.add({ title: "Grok conversations use Grok Build", variant: "error" });
+      return;
+    }
     setSelectedModel(modelId);
     persistSelectedModel(modelId);
   };

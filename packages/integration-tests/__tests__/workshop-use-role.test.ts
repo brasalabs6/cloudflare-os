@@ -122,6 +122,8 @@ const DENIED_OVERSEER: Record<Exclude<keyof Overseer, keyof RpcTarget | UseSurfa
   },
   listSlashCommands: ws => ws.listSlashCommands(),
   newChat: ws => ws.newChat("Hello", null),
+  newGrokChat: ws => ws.newGrokChat("Hello"),
+  sendGrokMessage: ws => ws.sendGrokMessage(1, "Hello"),
   sendChatMessage: ws => ws.sendChatMessage(1, "Hello", null),
   uploadChatAttachment: ws =>
     ws.uploadChatAttachment({ mimeType: "text/plain", content: new Uint8Array() }, null),

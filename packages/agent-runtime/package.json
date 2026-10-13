@@ -1,0 +1,19 @@
+{
+  "name": "@gadgets/agent-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
+    "typescript": "catalog:",
+    "wrangler": "catalog:"
+  },
+  "dependencies": {
+    "@cloudflare/config": "0.20.0"
+  }
+}

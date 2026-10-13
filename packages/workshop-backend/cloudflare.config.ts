@@ -43,6 +43,8 @@ export default defineGadgetsWorker({
     AVATARS: bindings.kv(),
     BLUEPRINT_CONTENT: bindings.r2({ name: "gadgets-blueprint-content" }),
     LOADER: bindings.workerLoader(),
+    // Opt-in Grok Runtime: private Worker service, never routed to the browser.
+    GROK_RUNTIME: bindings.worker({ worker: "agent-runtime" }),
   },
 
   // When deploying to prod, you may want to bundle the frontend as assets on the backend, like so.
