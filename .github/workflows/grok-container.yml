@@ -1,0 +1,40 @@
+name: Grok Container Build
+
+# No account credentials are used in this job. An isolated Docker image build
+# proves that the pinned CLI can be installed before staging Cloudflare E2E.
+on:
+  pull_request:
+    paths:
+      - "packages/agent-runtime/**"
+      - ".github/workflows/grok-container.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-grok-container:
+    name: Build pinned Grok CLI Container
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build pinned Grok image without secrets
+        run: |
+          docker build \
+            -f packages/agent-runtime/Dockerfile \
+            --build-arg GROK_VERSION=1.0.50 \
+            -t grok-phase1-ci:local \
+            packages/agent-runtime
+      - name: Verify CLI binary from image
+        run: |
+          docker run --rm --entrypoint grok grok-phase1-ci:local --version
+      - name: Confirm no provider key was compiled into the image
+        run: |
+          if docker history --no-trunc grok-phase1-ci:local | grep -Ei 'GROK_PROXY_API_KEY=|Bearer [A-Za-z0-9_-]{12,}' ; then
+            echo 'Potential provider credential in Grok image history' >&2
+            exit 1
+          fi
