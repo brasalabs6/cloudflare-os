@@ -56,3 +56,8 @@ This contract is a proposal and must be reviewed against Cap'n Web RPC types bef
 ## Implementation checklist
 
 Follow .agents/skills/write-gatekeeper/SKILL.md and SKELETON.md. Create src/types.d.ts and generated src/types.txt; design the capability API first and pause for review before implementation. Register the Worker, service binding, generated config, tests, observability and deployment secrets. Add tests for authorization, approval, replay, bounded payloads, observer checks and denied cross-workspace access.
+
+
+## Authority and executable contract prerequisites
+
+See [ACP_CONTRACTS_V1](../../docs/architecture/ACP_CONTRACTS_V1.md) sections 1, 3, 4 and 7. Treat the public TypeScript API above as a PROPOSAL until Cap'n Web-compatible `src/types.d.ts` and the generated `src/types.txt` are reviewed per the existing Gatekeeper authoring guide. In particular, a `submitAction` record must not physically spawn or mutate a runtime until approved `applyAction`; the queued response cannot claim the process ran. ACP `session/request_permission` is a separate approval namespace and cannot silently be simulated as an applied external action. All reads exposed to Gadgets use `authorizeObservation` and the existing observer semantics; human Workshop control uses its independently authenticated path.
