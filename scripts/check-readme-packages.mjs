@@ -33,7 +33,7 @@ export function checkReadmePackages(root) {
   const seen = new Set();
   const rows = readme.slice(start + START.length, end).split(/\r?\n/)
     .filter((line) => /^\|\s*\[/.test(line));
-  const rowPattern = /^\|\s*\[\`((?:packages\/[^/]+|scripts))\`\]\(([^)]+)\)\s*\|\s*(\`[^`]+\`|—)\s*\|\s*.+\|\s*$/;
+  const rowPattern = /^\|\s*\[`((?:packages\/[^/]+|scripts))`\]\(([^)]+)\)\s*\|\s*(`[^`]+`|—)\s*\|\s*.+\|\s*$/;
   for (const row of rows) {
     const match = row.match(rowPattern);
     if (!match) { errors.push(`Malformed inventory row: ${row}`); continue; }
