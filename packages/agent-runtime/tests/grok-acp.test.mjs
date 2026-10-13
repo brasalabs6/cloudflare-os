@@ -48,3 +48,35 @@ test("malformed frame closes and rejects", async () => {
   acp.receive("{invalid");
   await assert.rejects(request, /ACP_INVALID_JSON/);
 });
+
+test("ACP streams only assistant text; tool, thought and other updates remain private", () => {
+  const sock = new FakeSocket();
+  const seen = [];
+  const acp = new GrokAcpPeer(sock, { onText: (text) => seen.push(text) });
+  sock.emit({ jsonrpc: "2.0", method: "session/update",
+    params: { update: { sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "Hello" } } } });
+  sock.emit({ jsonrpc: "2.0", method: "session/update",
+    params: { update: { sessionUpdate: "agent_thought_chunk",
+      content: { type: "text", text: "private" } } } });
+  sock.emit({ jsonrpc: "2.0", method: "session/update",
+    params: { update: { sessionUpdate: "tool_call",
+      content: { type: "text", text: "untrusted tool output" } } } });
+  assert.deepEqual(seen, ["Hello"]);
+  acp.abort();
+});
+test("oversized frame aborts all outstanding ACP requests", async () => {
+  const sock = new FakeSocket();
+  const acp = new GrokAcpPeer(sock, { timeoutMs: 500 });
+  const pending = acp.request("session/prompt", {});
+  acp.receive("x".repeat(256_001));
+  await assert.rejects(pending, /ACP_INVALID_FRAME/);
+});
+test("ACP prompt timeout is an unknown outcome, not a safe automatic retry", async () => {
+  const sock = new FakeSocket();
+  const acp = new GrokAcpPeer(sock, { timeoutMs: 15 });
+  const pending = acp.request("session/prompt", { sessionId: "s", prompt: [] });
+  await assert.rejects(pending, /ACP_REQUEST_TIMEOUT_OUTCOME_UNKNOWN/);
+  assert.equal(acp.pending.size, 0);
+  acp.abort();
+});
