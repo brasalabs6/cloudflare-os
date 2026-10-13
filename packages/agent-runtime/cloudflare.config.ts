@@ -2,7 +2,7 @@ import { defineConfig, defineContainer, exports } from "@cloudflare/config";
 
 const grok = defineContainer({
   name: "grok",
-  schedulingPolicy: "durable_object",
+  schedulingPolicy: "durable-object",
   images: { grok: { dockerfile: "./Dockerfile" } }
 });
 
