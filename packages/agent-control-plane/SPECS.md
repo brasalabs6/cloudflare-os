@@ -81,3 +81,16 @@ Attach source commit/paths and target commit/tests to the [migration matrix](../
 **Implementation ordering:** Before implementation: propose Task admission API reviewed against AgentSpawnerConfig; define durable task→Overseer accepted-versus-completed receipt; use scheduler scheduleId:runId; test task crash/outbox reconciliation and revocation before creating DO migrations.
 
 **Blockers:** no executable implementation until existing behavior is characterized; module files in this directory are currently planning documents only. For every feature, record source/target authority, typed schema, security negative test, crash/idempotency case and relevant integration evidence. If a proposed API duplicates current authority, revise the proposal first instead of implementing a duplicate.
+
+## Multiagent MCP PDR extension — Workboard and continuity (design only)
+
+**Owner decision:** existing Control Plane AgentRegistry and execution `Task` remain canonical. For the PDR's Goal/project and business deliverables, introduce **WorkItem** (plus Goal, WorkItemDependency, WorkItemClaim, WorkItemReview) **under this package**, rather than using the engine `Task` state machine for review/DoD. One WorkItem can create/link multiple execution Tasks, each admitted and fenced through the existing Control Plane lifecycle. No duplicated `AgentDefinition` store.
+
+- `Goal`: project grouping and DoD/priority context.
+- `WorkItem`: business outcome, dependent DAG, assignment, exclusive claim/lease, evidence and independent review.
+- `Task`/`Execution`: native/ACP engine running, budgets, loop iterations, runtime reconcile and unknown outcome.
+- `ContinuityProjection`: versioned attributed snapshot from ACC source cursor, never a replacement for Overseer compaction or runtime checkpoint.
+- Local transaction: WorkItem change + idempotency + internal outbox; Mailbox notification is eventual and must be deduped downstream.
+- Calendar recurrence remains the existing Scheduler's authority. Loop continuation remains `agent-loop`; Control Plane only admits/wakes and persists ownership.
+
+See [multiagent workboard delta](../../docs/architecture/MULTIAGENT_MCP_CONTRACTS_V1.md), [owner audit](../../docs/architecture/MULTIAGENT_RESPONSIBILITY_AUDIT.md) and [plan](../../docs/architecture/MULTIAGENT_MCP_IMPLEMENTATION_PLAN.md). No code/schemas implemented by this appendix.

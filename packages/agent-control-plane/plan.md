@@ -97,3 +97,15 @@ Task idempotency across schedule redeliveries, concurrent writes/expected revisi
 **Implementation ordering:** Before implementation: propose Task admission API reviewed against AgentSpawnerConfig; define durable task→Overseer accepted-versus-completed receipt; use scheduler scheduleId:runId; test task crash/outbox reconciliation and revocation before creating DO migrations.
 
 **Blockers:** no executable implementation until existing behavior is characterized; module files in this directory are currently planning documents only. For every feature, record source/target authority, typed schema, security negative test, crash/idempotency case and relevant integration evidence. If a proposed API duplicates current authority, revise the proposal first instead of implementing a duplicate.
+
+## Multiagent PDR additional milestones (NOT STARTED)
+
+- [ ] CP-M01: review `Task` vs `WorkItem` distinction; owner signs off on separate claim/review and execution fencing semantics.
+- [ ] CP-M02: add versioned Goal/Project/WorkItem/Dependency/Claim/Review schemas under this package and migrations in the owning DO.
+- [ ] CP-M03: implement transactional acyclic DAG and exclusive WorkItem claim/lease with idempotency, stale actor fencing and reviewer independence.
+- [ ] CP-M04: map WorkItem delegation to existing v2 `Task`/`Execution` admission; persist opaque correlation, don't mutate runtime Run directly.
+- [ ] CP-M05: persist WorkItem assignment outbox; integrate idempotent Mailbox notice and failure repair with retained source event.
+- [ ] CP-M06: implement ContinuityProjection from ACC event cursor/vector; stale/reconnect behavior and evidence-linked revisions.
+- [ ] CP-M07: negative cross-workspace, claim-race, DAG-cycle, self-review, UNKNOWN outcome and recover-after-crash E2E.
+
+These are **extensions** to existing P01–P11, not another task service/runner.

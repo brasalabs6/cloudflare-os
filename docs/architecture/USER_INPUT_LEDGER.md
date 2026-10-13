@@ -166,3 +166,36 @@ Eu preciso que você faça uma análise mais minuciosa e revise tudo e principal
 **Revisões efetivamente gravadas:** [root/registro e unificação](https://github.com/brasalabs6/cloudflare-os/commit/8e3e23d2e73349847f180b461ccf56d71c617b3a); [ACC/Control Plane/Loop/Native/Tool Registry](https://github.com/brasalabs6/cloudflare-os/commit/322a91a2a3490c31b1a379c73e1d36ebf2eaf036); [MCP export/ACP/Release/Grok/Codex](https://github.com/brasalabs6/cloudflare-os/commit/eb95a27c87ad0050b668f148d6d6cad60a5dd5bb); [OpenCode/Runtime/Egress/Gatekeepers](https://github.com/brasalabs6/cloudflare-os/commit/e1497819d159c047f0448bcd4d40bca2be3836f4); [Workshop backend/shared/Scheduler/MCP Shared](https://github.com/brasalabs6/cloudflare-os/commit/6704a8d25f2c1f423c0f67802fa0b67dc09ffdc2); [MCP BYO/Portal/router/frontend](https://github.com/brasalabs6/cloudflare-os/commit/873d2e58d27f7140a269c04553070807b444aece); [UI de agentes/Kit/Context/Observability/Error Reporting](https://github.com/brasalabs6/cloudflare-os/commit/91e5bc8a0285b9d73727d6efdf9f873dd7baf565).
 
 **Não executado / pendente:** nenhuma implementação TS/DO/Worker, testes de compilação, testes de integração em Cloudflare ou deploy. Permanecem gates de API dos Gatekeepers, paridade do runAgent nativo, Task→Overseer despacho/resultado, auth do MCP server, destilação verificada do Grokbot e cenários de A/B/recuperação. O arquivamento Grokbot segue pendente.
+
+## U-009 — Solicitação de proposta MCP baseada no ZIP
+
+**Tipo:** transcrição literal disponível nesta conversa (ordem histórica da conversa, registrada depois de U-008 já existente).
+
+````text
+Analise essas specs e proponha essa arquitetura implementada no brasalabs6/cloudflare-os 
+Modulos independentes que serão acessiveis pelos agentes via mcp
+````
+
+**Objetivo:** adaptar PDR/SPECS de coordenação multiagente à topologia real de Cloudflare OS, via capacidades MCP e RPC já definidas.
+
+**Resultado:** [PR #4](https://github.com/brasalabs6/cloudflare-os/pull/4) com arquitetura/contratos revisados após [auditoria de módulos existentes](./EXISTING_MODULE_BOUNDARIES_AUDIT.md), além da [matriz PDR específica](./MULTIAGENT_RESPONSIBILITY_AUDIT.md). Specs são propostas, não runtime.
+
+---
+
+## U-010 — Solicitação de PR de documentação
+
+**Tipo:** transcrição literal disponível.
+
+````text
+Execute a criação das specs e docs em um novo PR
+````
+
+**Objetivo:** versionar contratos/ADRs/specs em novo PR.
+
+**Resultado:** [PR #4](https://github.com/brasalabs6/cloudflare-os/pull/4), Draft. Revisão posterior removeu autoridades paralelas e atualizou specs/plans dos módulos canônicos. Testes e deploys pendentes.
+
+---
+
+## 2026-10-13 — Nota de revisão para U-008
+
+**Solicitação U-008:** revisão minuciosa para eliminar sobreposição de responsabilidades. A revisão do PR #4 assume a auditoria canônica [EXISTING_MODULE_BOUNDARIES_AUDIT](./EXISTING_MODULE_BOUNDARIES_AUDIT.md) e detalha a diferença entre v2 execução `Task` e PDR WorkItem, mantendo AgentDefinition/loops/triggers no Control Plane, export MCP no Tool Gateway e eventos no ACC. Somente Mailbox é lacuna nova confirmada de projeto; novo armazenamento de fatos/learning requer primeiro gate de reutilização do Context. Nenhum runtime ou E2E é apresentado como implementado.

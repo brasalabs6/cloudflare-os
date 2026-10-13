@@ -82,3 +82,7 @@ Attach source commit/paths and target commit/tests to the [migration matrix](../
 **Implementation ordering:** Before implementation: map AiChatStreamEvent, pi AgentEvent and existing Cap'n Web response/error shapes; prove generated ACC events are read projections; create sourceEventId + projectionCursor dedup fixtures; do not persist a second chat history.
 
 **Blockers:** no executable implementation until existing behavior is characterized; module files in this directory are currently planning documents only. For every feature, record source/target authority, typed schema, security negative test, crash/idempotency case and relevant integration evidence. If a proposed API duplicates current authority, revise the proposal first instead of implementing a duplicate.
+
+## Multiagent coordination projection addendum (design only)
+
+ACC `AgentEventV1` remains the **only** normalized cross-engine/business activity projection. Proposed WorkItem created/claimed/reviewed, Mailbox delivered/acked, WorkspaceFact revised/learning proposed and Continuity updated are **new validated source event kinds/extensions**, with source authority, caller-visible scope, dedupe map and replay cursor. They are **not** a second `DomainEventV1` protocol or a second mutable audit datastore. Control Plane execution `Task` and WorkItem IDs are distinct in payload schemas, with explicit aliases only in the Tool Registry. Existing Overseer/ACP original event streams stay authoritative. See [delta contracts](../../docs/architecture/MULTIAGENT_MCP_CONTRACTS_V1.md).
