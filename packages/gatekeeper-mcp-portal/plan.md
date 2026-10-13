@@ -1,64 +1,21 @@
-# MCP Portal Gatekeeper — agent tool reuse — plan.md
+# gatekeeper-mcp-portal — implementation plan (roadmap gated)
 
-**Situação:** PLANEJADO; o package já existe e o plano NÃO significa substituir sua implementação atual. **User input:** [U-006](../../docs/architecture/USER_INPUT_LEDGER.md). **Contrato:** [Unified v2](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md).
+**Status:** Fase 1 SEM ALTERAÇÕES; Fase 5 MCP Registry. **Normative sequence:** [ROADMAP](../../ROADMAP.md); [minimal Grok MVP](../../docs/architecture/PHASE1_GROK_MVP.md). The older all-at-once multi-agent implementation plan was superseded and survives in Git history only.
 
-## Base atual, fonte e regras de destilação
+## Current owner and non-overlap
 
-A portal-connected account can multiplex multiple upstream servers, but each Gadget or autonomous agent binding must select exactly one server and allowed tools. Trust in annotations can change at deployment runtime and must invalidate auto-approval; no cross-server grants or credential retention on endpoint repoint.
+Portal MCP existente preservado; autenticação, scopes e classificador existentes não serão alterados nem usados diretamente pelo Grok nesta fase.
 
-**Fontes reais:** Existing MCP Portal SPECS and mcp-shared; serverId scope, live trust policy and deployment-repoint semantics.
+## Phase 1 — no work, no deploy
 
-## Etapas de implementação e validação
+- [ ] Confirm this package remains unchanged when Phase 1 code lands; run its existing regression suite and include any violations in the phase review.
 
-- [ ] **01. Inventory Portal upstream serverId resource-scope, deployment endpoint/auth repoint and live annotation trust tests.**
-  - Entrega: commit com caminhos afetados, schema ou fluxograma atualizado e teste comprovável.
-  - Checagem: preservação da segurança de Gatekeeper, testes regressivos e documentação de impactos em ACC/API.
+## Later phases (not authorized for implementation now)
 
-- [ ] **02. Define Tool Registry projection that preserves serverId, tool subset, trust policy fingerprint and account generation.**
-  - Entrega: commit com caminhos afetados, schema ou fluxograma atualizado e teste comprovável.
-  - Checagem: preservação da segurança de Gatekeeper, testes regressivos e documentação de impactos em ACC/API.
+- **Phase 2:** stabilize Grok runtime/PTY/file flows as warranted by evidence; no changes here unless existing owner applies.
+- **Phase 3:** existing Scheduler and AgentSpawner may be reused for autonomous tasks/loops after Phase 1 completion.
+- **Phase 4:** multi-harness adapters only once Grok runs reliably and a second implementation proves the abstraction.
+- **Phase 5:** integrate [brasalabs6/mcp-registry](https://github.com/brasalabs6/mcp-registry), reusing existing MCP Gatekeepers and Workshop permissions; do not implement alternative registry/gateway.
+- **Phase 6:** A/B/release rollout only after preceding gates.
 
-- [ ] **03. Ensure connected facets fail closed on repoint and revoked trust; dynamically recalculate tool visibility and auto-approval eligibility.**
-  - Entrega: commit com caminhos afetados, schema ou fluxograma atualizado e teste comprovável.
-  - Checagem: preservação da segurança de Gatekeeper, testes regressivos e documentação de impactos em ACC/API.
-
-- [ ] **04. Integrate platform agents and subagents with existing Gatekeeper approval/observation boundaries and observer refusal.**
-  - Entrega: commit com caminhos afetados, schema ou fluxograma atualizado e teste comprovável.
-  - Checagem: preservação da segurança de Gatekeeper, testes regressivos e documentação de impactos em ACC/API.
-
-- [ ] **05. Exercise secure OAuth/preissued-token no-leak policies, tool server isolation and catalog mismatch across engine transports.**
-  - Entrega: commit com caminhos afetados, schema ou fluxograma atualizado e teste comprovável.
-  - Checagem: preservação da segurança de Gatekeeper, testes regressivos e documentação de impactos em ACC/API.
-
-- [ ] **06. Run staging autonomous task using portal tool after scope approval, revoke portal mid-task and prove subsequent calls denied.**
-  - Entrega: commit com caminhos afetados, schema ou fluxograma atualizado e teste comprovável.
-  - Checagem: preservação da segurança de Gatekeeper, testes regressivos e documentação de impactos em ACC/API.
-
-## Arquivos propostos e relações
-
-```text
-packages/gatekeeper-mcp-portal/
-  src/portal.ts and inherited mcp-shared classes (reuse)
-  src/agent-platform-catalog.ts (optional)
-  src/__tests__/{upstream-server-isolation,trust-revocation,agent-tool}.test.ts
-```
-
-## Gates de aprovação, migração, aceite
-
-- [ ] Comparar código atual na main com os contratos e criar testes de caracterização antes de mexer em fluxos ativos.
-- [ ] Preservar compatibilidade com Workshop Cap'n Web, AgentSpawnerConfig, Scheduler approved hooks e mcp-shared trust; toda nova capability precisa de escopo e eventual revisão de API Gatekeeper.
-- [ ] Revisar schema/versão, origem dos dados, IDs, evento/projection cursor, storage migrations e auditoria de observações/ações.
-- [ ] Definir falhas/UNKNOWN outcomes, idempotência, replay, timeout, revogação, quotas, aprovação e isolamento de workspace.
-- [ ] Validar pnpm configs:check / build / test / lint quando código for alterado; staging E2E para rotas, containers ou integração de serviços.
-- [ ] Registrar evidência source→target→tests na [matriz](../../docs/architecture/ACP_MIGRATION_MATRIX.md) e no [user ledger](../../docs/architecture/USER_INPUT_LEDGER.md), distinguindo o que só foi planejado.
-
-**DoD:** todas etapas relevantes com testes e evidência; nenhuma API pública/MCP nova sem autorização e revisão de contrato.
-
-
-## No-overlap integration correction (2026-10-13)
-
-Reference: [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS §23. **Owner:** Admin Portal MCP already owns selected upstream serverId, live vetted/unenlisted trust policy, credential generation and endpoint repoint. Agent tools cannot create cross-server grants or leak preissued token.
-
-**Gate before implementation:** Test explicit per-server facet and read/action policy under agent tool registry and Task grants, including repoint and trust revoke races.
-
-Any new agent-platform feature must preserve existing approved observations/actions, tenant scopes, Cap'n Web contract and consumer regressions. A documented proposed integration is not deployed functionality.
+**DoD:** no regressions of original module; every new step has a code commit, security/contract tests and required Worker staging proof. Documentation alone is not implementation.

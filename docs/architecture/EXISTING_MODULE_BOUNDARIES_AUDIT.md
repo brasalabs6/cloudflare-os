@@ -1,5 +1,7 @@
 # Audit of existing modules and no-overlap boundaries — 2026-10-13
 
+> **SUPERSEDED AS ACTIVE IMPLEMENTATION PLAN — 2026-10-13:** [ROADMAP](../../ROADMAP.md) authorizes only Grok-in-Cloudflare-Container + existing Workshop chat in Phase 1. This page is **historical research, migration backlog or earlier audit snapshot**, not permission to implement any removed package. See [simplification decision](./SIMPLIFICATION_DECISION.md). Existing security contracts in root SPECS.md remain authoritative.
+
 **Status:** architecture review and corrective decisions; no executable implementation. **Reviewed branch:** `brasalabs6/cloudflare-os@9ad57f68ca1eb6f2e2c2ee313c4ff95d0d503a25`. **Requested by:** [user input U-008](./USER_INPUT_LEDGER.md). Root `SPECS.md` remains the highest-level platform normative contract; this review must be reconciled with it before implementation.
 
 ## 0. Evidence standard and exact inventory

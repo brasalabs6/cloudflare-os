@@ -552,56 +552,19 @@ Device notification registrations use an opaque install-bound one-time registrat
 ### 34.5 Verification obligations
 Run Git object/pack validation, chat/worktree acceptance/reroot/restart, private-worktree subscriber exclusion, Blueprint proposal/conflict, staged handoff replay and expiration, notification registration, restricted action controls and observer tests. The matching frontend/shared contracts and package docs MUST be updated in the same change. Historical migration records in src/storage-schema do NOT confer automatic migrations to @gadgets/typed-storage.
 
-## Unified Agent Platform integration contract — 2026-10-13
+## Phase-gated Grok integration — 2026-10-13
 
-**Status:** incremental integration SPEC and IMPLEMENTATION DRAFT, not a runtime change. **Normative:** [Unified Agent Platform v2](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input and evidence ledger](../../docs/architecture/USER_INPUT_LEDGER.md). For this package see the [ordered plan](./plan.md). Existing behaviors documented above remain authoritative until a reviewed, backwards-compatible migration is implemented.
+> **Current roadmap:** [ROADMAP.md](../../ROADMAP.md). **Status:** Fase 1 ACTIVE. Future agent/tool/registry/loop specs previously appended here were speculative and have been removed from the active package spec. Historical material survives in Git history. The 32 existing packages and their working contracts are preserved.
 
-### Component and control flow
+**Ownership:** Overseer continua autoridade de identidade, workspace, chat, autorização, histórico, callbacks e notificações. Nova integração deve abrir/enviar ao Grok via service binding privado; só chats opt-in Grok desviam de pi-agent-core; chats nativos permanecem idênticos.
 
-```mermaid
-flowchart TD
- Browser[Workshop Cap'n Web] --> O[Overseer DO]
- O --> Pi[runAgent / pi-agent-core]
- O --> C[Authenticated Agent Control Plane RPC]
- Pi --> Events[ACC source projector]
- O --> G[Existing Gatekeeper approval queue]
- C --> Engine[Native / CLI runtime]
-```
+**Current MVP integration:** 1. Caracterizar mensagens, histórico, turnos, streaming, reconnect e cancelamento de ChatInterface/Overseer.
+2. Definir vínculo opcional engine='grok' por chat, com default native para registros existentes e sem migrar AgentSpawner.
+3. Adicionar service binding privado do Workshop para o único agent-runtime e registrar configuração nos geradores/release manifests.
+4. Persistir input chat exatamente uma vez; só no chat Grok admitir run e encaminhar prompt com idempotencyKey e scope derivado de Overseer.
+5. Consumir eventos do DO via sequência com deduplicação e persistir mensagens do assistente no histórico do chat existente; emitir eventos no subscriber atual.
+6. Distinguir aceitação vs conclusão, estado UNKNOWN e perda do processo; reconciliar sem repetir prompts inseguros.
+7. Revogação de acesso encerra permissão de novas chamadas e revoga sessão vinculada, sem cross-workspace bypass.
+8. Testes Chat/AgentSpawner nativo, observadores, múltiplos chats, transição Grok, cancel, reconnect, erro de rede e real Cloudflare E2E.
 
-### Proposed integration data schema and API changes
-
-```typescript
-type NativeAgentTaskLink={schemaVersion:1;workspaceId:string;chatId:number;agentId:string;taskId:string;nativeTurnId:string|null;lastProjectedChatSequence:number;createdAt:string};
-type UserTaskCommand={schemaVersion:1;idempotencyKey:string;expectedAgentRevision:number;agentId:string;command:'create-task'|'pause'|'resume'|'cancel';inputRef:string|null};
-```
-
-Validate at boundaries, add JSON Schema where values cross Worker/process/storage, specify schema version and migrations. This is a draft shape to be reconciled with actual public types and Cap'n Web support before modifying kernel interfaces.
-
-### Implementation file map
-
-```text
-packages/workshop-backend/
-  src/agent-platform/{native-turn-bridge,event-projection,control-plane-binding,task-admission}.ts
-  src/__tests__/{native-event-parity,task-auth,spawner-compatibility}.test.ts
-  SPECS.md
-  plan.md
-```
-
-### Ownership, loops, security and backwards compatibility
-
-Remain owner of Workspace identity, per-chat history, action queue/observer verification, native pi-agent-core turn, edit/change barriers and compaction. A thin native bridge creates independent tasks only with authorized principal/grant and maps existing chat events; it must not copy the whole ChatHistory into a new task DO or turn on a second native agent scheduler.
-
-**Legacy/source comparison:** Existing src/agent.ts runAgentLoopContinue + step commit barrier, src/overseer.ts alarms/pendingAgentCalls/approval/replay, src/agent-compaction.ts, src/agent-spawner-binding import, scheduler callbacks. Preserve all already-tested features and evidence. Do not introduce a parallel scheduler, MCP client policy, login authority, Cap'n Web transport or user-facing run-loop persistence.
-
-### Definition of done
-
-Source→target traceability, schema fixtures, existing test parity and new negative boundary tests, authenticated staging proof for new cross-worker behavior and migration-aware rollback. **Detailed steps:** [plan.md](./plan.md).
-
-
-## Integration corrective decision — source audit 2026-10-13
-
-Reference: [Existing module boundary audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md); root SPECS §23 takes precedence. **Confirmed current authority:** The existing native runAgent / pi-agent-core loop, Overseer chat/compaction/Git step barriers, current AgentSpawner and ApprovalQueue remain source of truth. The new Control Plane must call only authenticated reviewed integration capabilities; do not move model-private chat data or invoke native runAgent out-of-context.
-
-**Required next implementation checkpoint:** Map AgentSpawnerBinding.d.ts and Overseer #runAgentTurn/deliverAgentCallback; add characterization and cross-DO idempotency/receipt-vs-completion tests before adding public RPC; keep permission data and native model config server-owned.
-
-Do not change the existing implementation solely because a draft package exists. Preserve current tests, RPC and storage compatibility; any new state machine needs explicit idempotency, observer/action semantics, crash recovery and rollback acceptance. New agent-platform modules are not deployed.
+**Non-goals in Phase 1:** Agent Registry, MCP Registry integration, tool gateways, scheduling, autonomous tasks, Codex/OpenCode, new Gatekeepers, generalized ACC and A/B. The only new docs-only runtime module is `packages/agent-runtime`. See [Phase 1 implementation](../../docs/architecture/PHASE1_GROK_MVP.md) and [this package's plan](./plan.md).

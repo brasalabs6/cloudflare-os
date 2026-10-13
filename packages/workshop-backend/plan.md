@@ -1,71 +1,43 @@
-# Workshop Backend Kernel / Native Agent Integration — plan.md
+# workshop-backend — implementation plan (roadmap gated)
 
-**Situação:** PLANEJADO; o package já existe e o plano NÃO significa substituir sua implementação atual. **User input:** [U-006](../../docs/architecture/USER_INPUT_LEDGER.md). **Contrato:** [Unified v2](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md).
+**Status:** Fase 1 ACTIVE. **Normative sequence:** [ROADMAP](../../ROADMAP.md); [minimal Grok MVP](../../docs/architecture/PHASE1_GROK_MVP.md). The older all-at-once multi-agent implementation plan was superseded and survives in Git history only.
 
-## Base atual, fonte e regras de destilação
+## Current owner and non-overlap
 
-Remain owner of Workspace identity, per-chat history, action queue/observer verification, native pi-agent-core turn, edit/change barriers and compaction. A thin native bridge creates independent tasks only with authorized principal/grant and maps existing chat events; it must not copy the whole ChatHistory into a new task DO or turn on a second native agent scheduler.
+Overseer continua autoridade de identidade, workspace, chat, autorização, histórico, callbacks e notificações. Nova integração deve abrir/enviar ao Grok via service binding privado; só chats opt-in Grok desviam de pi-agent-core; chats nativos permanecem idênticos.
 
-**Fontes reais:** Existing src/agent.ts runAgentLoopContinue + step commit barrier, src/overseer.ts alarms/pendingAgentCalls/approval/replay, src/agent-compaction.ts, src/agent-spawner-binding import, scheduler callbacks.
+## Phase 1 — ordered steps
 
-## Etapas de implementação e validação
+- [ ] **F1-01** Caracterizar mensagens, histórico, turnos, streaming, reconnect e cancelamento de ChatInterface/Overseer.
+  - Acceptance: source/target diff, contract coverage, regression tests and Cloudflare staging evidence when integration requires it.
 
-- [ ] **01. Characterize current runAgent/native tool and queued callable-agent behavior with focused tests and a full Chat/Gatekeeper RPC surface inventory.**
-  - Entrega: commit com caminhos afetados, schema ou fluxograma atualizado e teste comprovável.
-  - Checagem: preservação da segurança de Gatekeeper, testes regressivos e documentação de impactos em ACC/API.
+- [ ] **F1-02** Definir vínculo opcional engine='grok' por chat, com default native para registros existentes e sem migrar AgentSpawner.
+  - Acceptance: source/target diff, contract coverage, regression tests and Cloudflare staging evidence when integration requires it.
 
-- [ ] **02. Design minimal typed kernel extension to link native chat turn to Agent Task without breaking existing Overseer/client methods.**
-  - Entrega: commit com caminhos afetados, schema ou fluxograma atualizado e teste comprovável.
-  - Checagem: preservação da segurança de Gatekeeper, testes regressivos e documentação de impactos em ACC/API.
+- [ ] **F1-03** Adicionar service binding privado do Workshop para o único agent-runtime e registrar configuração nos geradores/release manifests.
+  - Acceptance: source/target diff, contract coverage, regression tests and Cloudflare staging evidence when integration requires it.
 
-- [ ] **03. Resolve authentic Workshop principal/scope on inbound agent/task actions; add private capability binding to Agent Control Plane and no browser-supplied identity.**
-  - Entrega: commit com caminhos afetados, schema ou fluxograma atualizado e teste comprovável.
-  - Checagem: preservação da segurança de Gatekeeper, testes regressivos e documentação de impactos em ACC/API.
+- [ ] **F1-04** Persistir input chat exatamente uma vez; só no chat Grok admitir run e encaminhar prompt com idempotencyKey e scope derivado de Overseer.
+  - Acceptance: source/target diff, contract coverage, regression tests and Cloudflare staging evidence when integration requires it.
 
-- [ ] **04. Wrap native runAgent with a read-only-to-state ACC projector that preserves existing step commit barriers, reasoning privacy and compaction.**
-  - Entrega: commit com caminhos afetados, schema ou fluxograma atualizado e teste comprovável.
-  - Checagem: preservação da segurança de Gatekeeper, testes regressivos e documentação de impactos em ACC/API.
+- [ ] **F1-05** Consumir eventos do DO via sequência com deduplicação e persistir mensagens do assistente no histórico do chat existente; emitir eventos no subscriber atual.
+  - Acceptance: source/target diff, contract coverage, regression tests and Cloudflare staging evidence when integration requires it.
 
-- [ ] **05. Connect AgentSpawnerConfig/newAgentSpawnerGatekeeper to optional Task creation with snapshot of authorized env/callback stubs; maintain legacy spawner behavior.**
-  - Entrega: commit com caminhos afetados, schema ou fluxograma atualizado e teste comprovável.
-  - Checagem: preservação da segurança de Gatekeeper, testes regressivos e documentação de impactos em ACC/API.
+- [ ] **F1-06** Distinguir aceitação vs conclusão, estado UNKNOWN e perda do processo; reconciliar sem repetir prompts inseguros.
+  - Acceptance: source/target diff, contract coverage, regression tests and Cloudflare staging evidence when integration requires it.
 
-- [ ] **06. Integrate task pause/stop/revoke and budget into existing activeAgent/callback queue semantics without spawning duplicate native run loops.**
-  - Entrega: commit com caminhos afetados, schema ou fluxograma atualizado e teste comprovável.
-  - Checagem: preservação da segurança de Gatekeeper, testes regressivos e documentação de impactos em ACC/API.
+- [ ] **F1-07** Revogação de acesso encerra permissão de novas chamadas e revoga sessão vinculada, sem cross-workspace bypass.
+  - Acceptance: source/target diff, contract coverage, regression tests and Cloudflare staging evidence when integration requires it.
 
-- [ ] **07. Add cross-DO outbox/reconciliation with Task DO to handle stale task state and unknown turn completion without mutating chat history outside Overseer.**
-  - Entrega: commit com caminhos afetados, schema ou fluxograma atualizado e teste comprovável.
-  - Checagem: preservação da segurança de Gatekeeper, testes regressivos e documentação de impactos em ACC/API.
+- [ ] **F1-08** Testes Chat/AgentSpawner nativo, observadores, múltiplos chats, transição Grok, cancel, reconnect, erro de rede e real Cloudflare E2E.
+  - Acceptance: source/target diff, contract coverage, regression tests and Cloudflare staging evidence when integration requires it.
 
-- [ ] **08. Run existing kernel unit/integration suites, restricted-mode, sharing, tool approvals, Git worktree, callback and restart regression; stage one native independent background task.**
-  - Entrega: commit com caminhos afetados, schema ou fluxograma atualizado e teste comprovável.
-  - Checagem: preservação da segurança de Gatekeeper, testes regressivos e documentação de impactos em ACC/API.
+## Later phases (not authorized for implementation now)
 
-## Arquivos propostos e relações
+- **Phase 2:** stabilize Grok runtime/PTY/file flows as warranted by evidence; no changes here unless existing owner applies.
+- **Phase 3:** existing Scheduler and AgentSpawner may be reused for autonomous tasks/loops after Phase 1 completion.
+- **Phase 4:** multi-harness adapters only once Grok runs reliably and a second implementation proves the abstraction.
+- **Phase 5:** integrate [brasalabs6/mcp-registry](https://github.com/brasalabs6/mcp-registry), reusing existing MCP Gatekeepers and Workshop permissions; do not implement alternative registry/gateway.
+- **Phase 6:** A/B/release rollout only after preceding gates.
 
-```text
-packages/workshop-backend/
-  src/agent-platform/{native-turn-bridge,event-projection,control-plane-binding,task-admission}.ts
-  src/__tests__/{native-event-parity,task-auth,spawner-compatibility}.test.ts
-```
-
-## Gates de aprovação, migração, aceite
-
-- [ ] Comparar código atual na main com os contratos e criar testes de caracterização antes de mexer em fluxos ativos.
-- [ ] Preservar compatibilidade com Workshop Cap'n Web, AgentSpawnerConfig, Scheduler approved hooks e mcp-shared trust; toda nova capability precisa de escopo e eventual revisão de API Gatekeeper.
-- [ ] Revisar schema/versão, origem dos dados, IDs, evento/projection cursor, storage migrations e auditoria de observações/ações.
-- [ ] Definir falhas/UNKNOWN outcomes, idempotência, replay, timeout, revogação, quotas, aprovação e isolamento de workspace.
-- [ ] Validar pnpm configs:check / build / test / lint quando código for alterado; staging E2E para rotas, containers ou integração de serviços.
-- [ ] Registrar evidência source→target→tests na [matriz](../../docs/architecture/ACP_MIGRATION_MATRIX.md) e no [user ledger](../../docs/architecture/USER_INPUT_LEDGER.md), distinguindo o que só foi planejado.
-
-**DoD:** todas etapas relevantes com testes e evidência; nenhuma API pública/MCP nova sem autorização e revisão de contrato.
-
-
-## Integration corrective decision — source audit 2026-10-13
-
-Reference: [Existing module boundary audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md); root SPECS §23 takes precedence. **Confirmed current authority:** The existing native runAgent / pi-agent-core loop, Overseer chat/compaction/Git step barriers, current AgentSpawner and ApprovalQueue remain source of truth. The new Control Plane must call only authenticated reviewed integration capabilities; do not move model-private chat data or invoke native runAgent out-of-context.
-
-**Required next implementation checkpoint:** Map AgentSpawnerBinding.d.ts and Overseer #runAgentTurn/deliverAgentCallback; add characterization and cross-DO idempotency/receipt-vs-completion tests before adding public RPC; keep permission data and native model config server-owned.
-
-Do not change the existing implementation solely because a draft package exists. Preserve current tests, RPC and storage compatibility; any new state machine needs explicit idempotency, observer/action semantics, crash recovery and rollback acceptance. New agent-platform modules are not deployed.
+**DoD:** no regressions of original module; every new step has a code commit, security/contract tests and required Worker staging proof. Documentation alone is not implementation.

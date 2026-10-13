@@ -166,3 +166,20 @@ Eu preciso que você faça uma análise mais minuciosa e revise tudo e principal
 **Revisões efetivamente gravadas:** [root/registro e unificação](https://github.com/brasalabs6/cloudflare-os/commit/8e3e23d2e73349847f180b461ccf56d71c617b3a); [ACC/Control Plane/Loop/Native/Tool Registry](https://github.com/brasalabs6/cloudflare-os/commit/322a91a2a3490c31b1a379c73e1d36ebf2eaf036); [MCP export/ACP/Release/Grok/Codex](https://github.com/brasalabs6/cloudflare-os/commit/eb95a27c87ad0050b668f148d6d6cad60a5dd5bb); [OpenCode/Runtime/Egress/Gatekeepers](https://github.com/brasalabs6/cloudflare-os/commit/e1497819d159c047f0448bcd4d40bca2be3836f4); [Workshop backend/shared/Scheduler/MCP Shared](https://github.com/brasalabs6/cloudflare-os/commit/6704a8d25f2c1f423c0f67802fa0b67dc09ffdc2); [MCP BYO/Portal/router/frontend](https://github.com/brasalabs6/cloudflare-os/commit/873d2e58d27f7140a269c04553070807b444aece); [UI de agentes/Kit/Context/Observability/Error Reporting](https://github.com/brasalabs6/cloudflare-os/commit/91e5bc8a0285b9d73727d6efdf9f873dd7baf565).
 
 **Não executado / pendente:** nenhuma implementação TS/DO/Worker, testes de compilação, testes de integração em Cloudflare ou deploy. Permanecem gates de API dos Gatekeepers, paridade do runAgent nativo, Task→Overseer despacho/resultado, auth do MCP server, destilação verificada do Grokbot e cenários de A/B/recuperação. O arquivamento Grokbot segue pendente.
+
+
+## U-009 — Simplificar módulos, Grok primeiro e MCP Registry em fase futura (2026-10-13)
+
+**Origem:** transcrição literal do usuário nesta sessão.
+
+```text
+A gente tem que remover esses módulos que estão sendo adicionados, que substituem módulos anteriores que já funcionam, já estão sendo testados. A gente não precisa criar complexidade onde não é necessário. A gente precisa criar um roadmap, um arquivo roadmap. E aí na primeira etapa tudo que a gente precisa implementar é suporte ao Grok, a lançar ele lá na sandbox da Cloudflare, tá ligado? E eu conseguir falar ali pelo chat. Não precisa adicionar nenhuma outra funcionalidade de MCP, de nada. Isso aí fica para outras fases. E aí então você tem que atualizar os planos para poder ser nessa sequência. E aí você tem que tomar cuidado em relação a isso, tá? E aí você executou também todos os pontos que você lançou ali, você propôs. Esses que estão sendo propostos aí depois a gente vai querer mudar ali, porque esse Agentd Registry, Agentd Gato, e a gente vai criar um baseado em um projeto que a gente já iniciou ali, chamado MCP Registry, que tem até no nosso GitHub.
+```
+
+**Interpretação:** remover diretórios de propostas que substituem módulos existentes; criar ROADMAP.md com Fase 1 exclusivamente Grok CLI em Cloudflare Container e chat Workshop existente; atualizar plans, adiar MCP/tools/registries e conservar referências à plataforma privada já iniciada `brasalabs6/mcp-registry` para fase futura.
+
+**Implementado (documentação, não runtime):** criado [ROADMAP.md](../../ROADMAP.md), [PHASE1_GROK_MVP.md](./PHASE1_GROK_MVP.md) e [SIMPLIFICATION_DECISION.md](./SIMPLIFICATION_DECISION.md); removidos 14 diretórios doc-only de arquitetura e os 2 documentos desnecessários da feature de frontend duplicada; preservado somente `packages/agent-runtime/SPECS.md` e `plan.md` como novo package planejado; atualizados root SPECS/AGENTS, planos/workshop specs por fase e marcados como históricos os documentos de arquitetura ampla. **Grok ainda não foi implementado** nem implantado. Nenhuma ferramenta MCP foi adicionada. O projeto `brasalabs6/mcp-registry` foi localizado e revisado em sua própria main no commit `ac8318a51b2a1c6f4522e76c9e7c21bc8500340d` (NestJS/Postgres/Docker/MQTT), para integração futura e sem duplicar política do Workshop.
+
+**Pendências concretas:** implementar Worker/DO/Container, cliente ACP, egress de modelo com segredos no Worker, adaptação do Overseer/ChatInterface e executar testes reais de staging. Grokbot ainda não arquivado; preserva referência de destilação.
+
+**Evidência:** commit desta simplificação; verificações de paths após publicação devem confirmar as remoções. Status de aceite Fase 1: NÃO INICIADA.

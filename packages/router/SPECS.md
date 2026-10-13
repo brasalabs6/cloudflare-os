@@ -132,57 +132,12 @@ flowchart TD
 
 Proxying must preserve required methods and WebSocket upgrades but avoid treating untrusted headers as proof of authentication. Tests MUST cover unknown/malformed Gatekeeper suffix, conflicting route prefixes, Email absence, API WebSocket handshake, assets fallback and provider OAuth callback routes.
 
+## Phase-gated Grok integration — 2026-10-13
 
-## Unified Agent Platform integration contract — 2026-10-13
+> **Current roadmap:** [ROADMAP.md](../../ROADMAP.md). **Status:** Fase 1 SEM ALTERAÇÕES. Future agent/tool/registry/loop specs previously appended here were speculative and have been removed from the active package spec. Historical material survives in Git history. The 32 existing packages and their working contracts are preserved.
 
-**Status:** incremental integration SPEC and IMPLEMENTATION DRAFT, not a runtime change. **Normative:** [Unified Agent Platform v2](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input and evidence ledger](../../docs/architecture/USER_INPUT_LEDGER.md). For this package see the [ordered plan](./plan.md). Existing behaviors documented above remain authoritative until a reviewed, backwards-compatible migration is implemented.
+**Ownership:** Router público existente /api, /gatekeeper e assets deve permanecer intocado: o Grok Runtime é acessado apenas por binding PRIVADO do Workshop, não por rota pública.
 
-### Component and control flow
+**Current MVP integration:** No implementation work for this package during Phase 1. Future integration depends on a separate phase gate and verified source reuse.
 
-```mermaid
-flowchart TD
- Req[Public request] --> Router[Existing router Worker]
- Router -->|/api*| W[Workshop Backend]
- Router -->|/gatekeeper/*| G[Existing Gatekeepers]
- Router -->|/agent-api/v1/*| API[New Tool Gateway Worker]
- Router -->|/agent-mcp/*| MCP[Same Tool Gateway MCP endpoint]
- Router -->|assets| AS[Workshop frontend assets]
-```
-
-### Proposed integration data schema and API changes
-
-```typescript
-type AgentIngressRoute={routePrefix:'/agent-api/v1'|'/agent-mcp';targetBinding:'AGENT_TOOL_GATEWAY';authMode:'bearer-scoped';maxBodyBytes:number;timeoutMs:number;allowCorsOrigins:string[]}
-```
-
-Validate at boundaries, add JSON Schema where values cross Worker/process/storage, specify schema version and migrations. This is a draft shape to be reconciled with actual public types and Cap'n Web support before modifying kernel interfaces.
-
-### Implementation file map
-
-```text
-packages/router/
-  src/{routing,auth-proxy}.ts (review existing router file layout first)
-  cloudflare.config.ts (binding update; generated wrangler.jsonc)
-  src/__tests__/{agent-api-routing,mcp-routing,auth-header,legacy-prefix}.test.ts
-  SPECS.md
-  plan.md
-```
-
-### Ownership, loops, security and backwards compatibility
-
-Do not break existing /api/*, /gatekeeper/* or asset routing; add opt-in exact /agent-api/v1/* and /agent-mcp/* to an independently deployed agent-tool-gateway binding, preserving request streaming and Workshop-origin CORS. Router handles forwarding only; gateway authenticates ticket and enforces grants.
-
-**Legacy/source comparison:** Existing packages/router routing source and AGENTS.md config/release conventions; frontend uses /api and /gatekeeper paths. Preserve all already-tested features and evidence. Do not introduce a parallel scheduler, MCP client policy, login authority, Cap'n Web transport or user-facing run-loop persistence.
-
-### Definition of done
-
-Source→target traceability, schema fixtures, existing test parity and new negative boundary tests, authenticated staging proof for new cross-worker behavior and migration-aware rollback. **Detailed steps:** [plan.md](./plan.md).
-
-
-## No-overlap integration correction (2026-10-13)
-
-Reference: [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS §23. **Owner:** Existing router handles /api and /gatekeeper plus assets/email. New MCP/HTTP ingress requires opt-in explicit service binding and must not redirect through trusted ExternalMessageGateway/callerEmail; backend/API authentication remains authoritative.
-
-**Gate before implementation:** Before code, define routes /agent-api/v1 and /agent-mcp scoped to new Gateway, review generated cloudflare.config.ts+manifest golden; test prefix conflicts and unauthorized public callers.
-
-Any new agent-platform feature must preserve existing approved observations/actions, tenant scopes, Cap'n Web contract and consumer regressions. A documented proposed integration is not deployed functionality.
+**Non-goals in Phase 1:** Agent Registry, MCP Registry integration, tool gateways, scheduling, autonomous tasks, Codex/OpenCode, new Gatekeepers, generalized ACC and A/B. The only new docs-only runtime module is `packages/agent-runtime`. See [Phase 1 implementation](../../docs/architecture/PHASE1_GROK_MVP.md) and [this package's plan](./plan.md).

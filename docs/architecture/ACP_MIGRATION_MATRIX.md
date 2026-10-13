@@ -1,5 +1,7 @@
 # ACP platform migration matrix
 
+> **SUPERSEDED AS ACTIVE IMPLEMENTATION PLAN — 2026-10-13:** [ROADMAP](../../ROADMAP.md) authorizes only Grok-in-Cloudflare-Container + existing Workshop chat in Phase 1. This page is **historical research, migration backlog or earlier audit snapshot**, not permission to implement any removed package. See [simplification decision](./SIMPLIFICATION_DECISION.md). Existing security contracts in root SPECS.md remain authoritative.
+
 **Purpose:** track each GrokBot/Hub capability against the Cloudflare OS destination without treating existing code or staging results as proof of production readiness.
 
 Status values:

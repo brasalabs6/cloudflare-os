@@ -108,9 +108,6 @@ flowchart TD
 
 Never automatically capture user Gadget exceptions as first-party security telemetry without explicit trust partitioning. Test overflow, malformed exceptions, fake user IDs, iframe source spoofing, absent binding and errors on the reporting path.
 
+## Grok MVP compatibility — 2026-10-13
 
-## Cross-module agent-platform boundary audit (2026-10-13)
-
-This package is a preexisting authority/consumer of agent-platform behavior. Refer to the [source-grounded no-overlap audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md) and root SPECS §23 before accepting any overlapping implementation. **Specific requirement:** New runtime/Task/ACP failures MUST map to typed bounded diagnostics using existing error-reporting models; never expose upstream stack traces or provider credentials to public ACC events.
-
-Any downstream addition needs existing consumer regression tests plus scoped-auth/idempotency/race tests; a documentation reference is not proof of runtime implementation.
+This existing module's current implementation and authority remain unchanged in [Phase 1](../../ROADMAP.md). No new agent-platform package replaces it. Future reuse must be explicitly justified by tests and an approved phase.

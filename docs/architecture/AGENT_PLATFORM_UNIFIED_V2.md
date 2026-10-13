@@ -1,5 +1,7 @@
 # Unified Agent Platform v2 — Specification
 
+> **SUPERSEDED AS ACTIVE IMPLEMENTATION PLAN — 2026-10-13:** [ROADMAP](../../ROADMAP.md) authorizes only Grok-in-Cloudflare-Container + existing Workshop chat in Phase 1. This page is **historical research, migration backlog or earlier audit snapshot**, not permission to implement any removed package. See [simplification decision](./SIMPLIFICATION_DECISION.md). Existing security contracts in root SPECS.md remain authoritative.
+
 > **Architecture-correction note, 2026-10-13:** The [existing module ownership audit](./EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS.md §23, and actual Workshop/Gatekeeper code take precedence over speculative target ownership in this earlier v2 design. The 15 new package directories are documentation-only; module adoption is subject to no-overlap gates.
 
 **Status:** TARGET DESIGN / IMPLEMENTATION PENDING. **Date:** 2026-10-13. **Normative dependency:** [ACP_CONTRACTS_V1](./ACP_CONTRACTS_V1.md) for legacy ACP-run envelopes; this document governs the extended agent/task/engine/tool abstraction. Where the two disagree on agent/task concepts, migrate the old contract with versioned compatibility, never silently reinterpret stored v1 rows.

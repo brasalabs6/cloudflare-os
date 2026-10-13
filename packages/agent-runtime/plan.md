@@ -1,83 +1,42 @@
-# Agent Runtime / SessionRuntime Durable Object — plan.md
+# agent-runtime/plan.md — Phase 1, Grok only
 
-> **Estado:** PLANEJADO, não implementado por estes documentos. **Origem:** U-006/U-007 no [registro de inputs](../../docs/architecture/USER_INPUT_LEDGER.md). **Arquitetura:** [Unified v2](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md).
+> **ACTIVE IMPLEMENTATION PLAN**, status NOT STARTED; see [ROADMAP](../../ROADMAP.md), [MVP contract](../../docs/architecture/PHASE1_GROK_MVP.md). This folder currently has **no runtime source code, build or Worker configuration**.
 
-## Escopo e dependências
+## Workstream A — source extraction and characterization
 
-Execution authority for CLI subprocess sessions. Control Plane Task DO owns task policy and loops; Runtime DO owns session/run/operation states and container generation. Every cross-service dispatch persists intent and returns accepted receipt; true completion via journal. Native Workshop engine does not require container, so runtime must not become authority for existing Overseer chat.
+- [ ] **A01** Pin SHA `9171b11c7269f6f305e99fd697a4dd885aad5459` of Grokbot PR #1, list exact source files, test fixtures and staging run links; compare Grokbot `Dockerfile`, `src/index.ts`, `tools/acp-smoke.mjs`, `src/ai-gateway.ts`.
+- [ ] **A02** Inspect Workshop current `AiChatMetadata`, `ChatInterface`, `runAgent` dispatch, `Overseer` permission and chat subscriber; identify smallest private RPC seam for Grok engine.
+- [ ] **A03** Characterize native chat regression (create, send, stream, replay, cancel, tool/approval, multiple chats) before adding new engine.
+- [ ] **A04** Verify pinned Grok version, CLI launch syntax, ACP schema, initialize/session/new/session/prompt/session/update/cancel and protocol permission behavior with fixture tests. Distinguish smoke-only `--always-approve`/`yoloMode` from production.
 
-**Fonte de destilação:** Grokbot PR#1 sandbox-runtime DO, session generation and terminal/files code; closed Cloudflare OS PR#2 low-level Container API fix; legacy Hub ACP transport.
+## Workstream B — real Cloudflare runtime
 
-**Outras dependências:** `agent-protocol` ACC v1, existing Workshop/Overseer/Gatekeeper permissions, `agent-control-plane` Task/Agent definitions, `agent-loop` (when scheduled), runtime DO vs native Overseer and immutable release registry. Do not overwrite already-implemented systems.
+- [ ] **B01** Add `package.json` using existing workspace scripts/TypeScript conventions and build/test scripts; choose one Worker/DO/Container target from existing Cloudflare config conventions.
+- [ ] **B02** Add `Dockerfile` with pinned Grok binary hash, non-root process, bounded workspace, Node supervisor if necessary; no credentials/images tagged latest.
+- [ ] **B03** Implement private Worker entrypoint and `GrokSession` DO keyed from authenticated Workshop chat reference; scoped RPC, schema checks, idempotent open/cancel/close and lifecycle state.
+- [ ] **B04** Implement Container start/health/provisioning with real Cloudflare API, image registration, generation fences; no public TCP endpoint.
+- [ ] **B05** Implement minimal Grok ACP stdio JSON-RPC client internal to this package: newline framing, pending IDs, deadlines, server callbacks denied unless explicitly supported, stderr isolation, state updates.
+- [ ] **B06** Implement prompt admission ledger (persist before dispatch), normalized sequenced event journal, bounded polling/replay for Workshop, crash/no-blind-retry/UNKNOWN behavior.
+- [ ] **B07** Implement trusted egress bridge **inside runtime** using Grokbot source and existing Workshop provider strategy: `enableInternet:false`, HTTPS interception, ephemeral trusted CA, model allowlist, Worker-only secret, bounded redirects/timeouts. Do not create `agent-egress` package.
+- [ ] **B08** Add file path limits, resource quotas, cleanup on chat stop/revoke, timeout error classification, per-workspace confinement and sanitised diagnostics.
 
-## Plano de implementação em ordem de dependência
+## Workstream C — Workshop vertical slice
 
-- [ ] **Etapa 01.** Extract Grokbot generation fencing, PTY, intercept and event journal implementations with exact source SHA; review Cloudflare ctx.container.start/getTcpPort fix.
-  - **Artefato:** implementação com arquivo/commit identificado, exemplo de payload/schema e teste de regressão.
-  - **Critério de aceite:** não alterar a autoridade do Workshop/Runtime sem migração explícita; revisar segurança e evidência antes da etapa seguinte.
+- [ ] **C01** Extend `workshop-shared` public chat types minimally/additively (engine selection default native and status); review before implementation.
+- [ ] **C02** Add private backend-to-runtime Worker service binding using generated config/release manifest; no router/MCP routes or new Gatekeeper.
+- [ ] **C03** On Grok chat prompt, Overseer persists user message once and invokes private runtime; suppress native pi-agent-core for that specific chat, preserve unchanged native behavior for all existing chats.
+- [ ] **C04** Pump events back to Overseer, map text to existing chat events/assistant messages and persist dedup by runtime session/generation/sequence before frontend publishing.
+- [ ] **C05** Reuse existing `ChatInterface` to select Grok and render progress/text/error/cancel. No new UI package or separate frontend app.
+- [ ] **C06** Restore client connection through existing chat API and a bounded runtime event catch-up; if Grok process died, show explicit lost/unknown state instead of fabricated session resume.
 
-- [ ] **Etapa 02.** Create DO SQLite schema/migrations for Session, Run, Operation, Event, Approval, Checkpoint with indexes and CAS revisions.
-  - **Artefato:** implementação com arquivo/commit identificado, exemplo de payload/schema e teste de regressão.
-  - **Critério de aceite:** não alterar a autoridade do Workshop/Runtime sem migração explícita; revisar segurança e evidência antes da etapa seguinte.
+## Workstream D — acceptance, deployment and proof
 
-- [ ] **Etapa 03.** Implement Worker private service binding and Session Directory sticky release routing; reject untrusted principal/workspace IDs.
-  - **Artefato:** implementação com arquivo/commit identificado, exemplo de payload/schema e teste de regressão.
-  - **Critério de aceite:** não alterar a autoridade do Workshop/Runtime sem migração explícita; revisar segurança e evidência antes da etapa seguinte.
+- [ ] **D01** Unit tests: JSON-RPC partial frames/IDs/timeout, double prompt/duplicate event, stale generations, runtime crash, canceled chat, source-aware dedup.
+- [ ] **D02** Security tests: cross-tenant isolation, arbitrary user-provided session IDs denied, no public runtime control, denied unsafe CLI tool permission, forbidden network/TLS/redirect/model and secrets leakage.
+- [ ] **D03** Native regressions: Workshop chat+stream+agent tool flows, AgentSpawner callable, Gatekeeper approvals, release/config checks and existing browser chat tests.
+- [ ] **D04** Run build/typecheck/lint/package integration and real Cloudflare staging E2E: ChatInterface → Overseer → Container Grok → inference → streamed response → persisted history → reconnect.
+- [ ] **D05** Capture exact commits and staging run URLs, package/container digest, rollback to native-only engine, launch docs; **only then close Phase 1**.
 
-- [ ] **Etapa 04.** Implement manifest-pinned container supervisor, ACP/native CLI driver hosting, heartbeat, lease, generation fencing, process/PTY limits.
-  - **Artefato:** implementação com arquivo/commit identificado, exemplo de payload/schema e teste de regressão.
-  - **Critério de aceite:** não alterar a autoridade do Workshop/Runtime sem migração explícita; revisar segurança e evidência antes da etapa seguinte.
+## Explicit deferrals
 
-- [ ] **Etapa 05.** Persist intent/outbox before dispatch; reconcile crash unknown outcomes without replaying unsafe commands or prompts.
-  - **Artefato:** implementação com arquivo/commit identificado, exemplo de payload/schema e teste de regressão.
-  - **Critério de aceite:** não alterar a autoridade do Workshop/Runtime sem migração explícita; revisar segurança e evidência antes da etapa seguinte.
-
-- [ ] **Etapa 06.** Implement ACC projection of ACP/native tool, command, child, approval, usage events with stable source event mapping and bounded replay.
-  - **Artefato:** implementação com arquivo/commit identificado, exemplo de payload/schema e teste de regressão.
-  - **Critério de aceite:** não alterar a autoridade do Workshop/Runtime sem migração explícita; revisar segurança e evidência antes da etapa seguinte.
-
-- [ ] **Etapa 07.** Implement scoped filesystem, Git, PTY tickets, terminal bytes and checkpoint R2 storage+verification, test symlink escape and restore.
-  - **Artefato:** implementação com arquivo/commit identificado, exemplo de payload/schema e teste de regressão.
-  - **Critério de aceite:** não alterar a autoridade do Workshop/Runtime sem migração explícita; revisar segurança e evidência antes da etapa seguinte.
-
-- [ ] **Etapa 08.** Wire task lease/budget cancellation and egress quotas to Control Plane without double-authority of runs.
-  - **Artefato:** implementação com arquivo/commit identificado, exemplo de payload/schema e teste de regressão.
-  - **Critério de aceite:** não alterar a autoridade do Workshop/Runtime sem migração explícita; revisar segurança e evidência antes da etapa seguinte.
-
-- [ ] **Etapa 09.** Run multi-session concurrency, crash/replay, corrupt checkpoint, 2-release sticky A/B rollout and 3 real harness E2E tests.
-  - **Artefato:** implementação com arquivo/commit identificado, exemplo de payload/schema e teste de regressão.
-  - **Critério de aceite:** não alterar a autoridade do Workshop/Runtime sem migração explícita; revisar segurança e evidência antes da etapa seguinte.
-
-## Proposta de paths de código
-
-```text
-packages/agent-runtime/
-  src/{worker,session-runtime-do,directory,dispatch,outbox,journal,recovery,checkpoint}.ts
-  src/supervisor/{server,protocol-driver,process,pty,filesystem,git}.ts
-  src/storage/{schema,migrations}.ts
-  src/__tests__/{state,replay,stale-generation,crash,checkpoint,terminal}.test.ts
-  cloudflare.config.ts (generated wrangler.jsonc)
-```
-
-## Gates obrigatórios
-
-- [ ] Capturar commit SHA, linhas/caminhos e fixtures do Grokbot/Hub/Workshop preexistentes e inventariar todas features relacionadas.
-- [ ] Definir validators/JSON Schema + erro + migração para cada mudança de dados; não promover um draft Typescript como schema validado.
-- [ ] Testar identidades, observer checks, autorização de observações, actions submit/apply, ACP permission e grant de Computer separadamente.
-- [ ] Testar concurrency, idempotency, generation fences, reconnect, crash-after-dispatch, UNKNOWN outcomes e cancel sem reexecutar side effects.
-- [ ] Validar quotas, recursos, egress, segredos, release A/B pinning e rollback onde aplicável.
-- [ ] Rodar lint/build/configs-check/test e E2E real na infraestrutura Cloudflare para funções que dependem de Worker/Container.
-- [ ] Atualizar [matriz de migração](../../docs/architecture/ACP_MIGRATION_MATRIX.md) com source→target→teste→URL staging; só marcar MIGRATED após validação.
-
-## Critério final
-
-Compatibilidade com motor nativo Workshop e Gatekeepers existentes; detalhes específicos de ACP/native expostos por extensões tipadas sem quebrar um front-end único. **Sem comprovação de deploy ainda.**
-
-
-## Mandatory existing-module boundary / implementation gate (2026-10-13)
-
-Audit: [EXISTING_MODULE_BOUNDARIES_AUDIT.md](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), governing root SPECS §23. **Owner constraint:** The runtime is the exclusive owner of CLI SessionRuntime/Run/Operation/Container generation and checkpoint. It is NOT an alternate executor for the existing Workshop pi-agent-core native chat, not Task DO, not scheduler and not Gatekeeper grant/approval state.
-
-**Before beginning tasks in this package:** Prove Task DO↔Runtime DO cross-DO operation/outbox and UNKNOWN outcomes; use release-assigned binding, safe PTY/rooted filesystem, no uncontrolled public endpoint. Compare Grokbot generation and cloudflare-os PR#2 low-level Container API evidence.
-
-The directory is DOC_ONLY until package.json, actual source, schema tests and correct Worker configuration are added. No new runtime is implemented by the spec revision. Every relevant plan item requires source→target evidence, typed contract checks, approval/identity threat tests and real worker E2E when applicable.
+No MCP, registry, generalized ACP package, separate harness adapter package, scheduler, background tasks, 24/7 loops, subagents, terminal, UI file explorer, R2 checkpoint, A/B release router or Codex/OpenCode. These are in ROADMAP Phase 2+ and must not be added as dependencies on B01–D05.

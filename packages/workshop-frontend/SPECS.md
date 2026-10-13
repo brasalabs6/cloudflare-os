@@ -359,56 +359,17 @@ New shared components live in @gadgets/ui, including controlled HierarchicalList
 ### 27.4 Verification
 Test ConnectHandoffPage, AuthContext/RpcContext replacement, stale stub disposal, account subscriptions, admin model gateway form validation, attachments, accepting Blueprint merges with conflicts, mobile touch drag, keyboard focus, sensitive-data reporting and restricted approval notices. Do not test only a static render of state transitions.
 
-## Unified Agent Platform integration contract — 2026-10-13
+## Phase-gated Grok integration — 2026-10-13
 
-**Status:** incremental integration SPEC and IMPLEMENTATION DRAFT, not a runtime change. **Normative:** [Unified Agent Platform v2](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input and evidence ledger](../../docs/architecture/USER_INPUT_LEDGER.md). For this package see the [ordered plan](./plan.md). Existing behaviors documented above remain authoritative until a reviewed, backwards-compatible migration is implemented.
+> **Current roadmap:** [ROADMAP.md](../../ROADMAP.md). **Status:** Fase 1 ACTIVE. Future agent/tool/registry/loop specs previously appended here were speculative and have been removed from the active package spec. Historical material survives in Git history. The 32 existing packages and their working contracts are preserved.
 
-### Component and control flow
+**Ownership:** Reusar o ChatInterface atual e RpcContext da SPA. A Fase 1 não autoriza criar dashboard separado ou feature folder agent-sessions; a experiência é chat Native/Grok usando componentes existentes.
 
-```mermaid
-flowchart LR
- App[Existing Workshop SPA] --> Chat[Current native chat/code UI]
- App --> Agents[Unified Agents management screens]
- Agents --> Tasks[Background tasks/loops/subagents]
- Agents --> Events[ACC replay reader]
- Chat --> Events
- Agents --> Grants[Approval/scheduler/MCP capabilities]
-```
+**Current MVP integration:** 1. Caracterizar o fluxo atual de ChatInterface, model-selection, streaming, erro, cancel e reconexão; screenshots/testes existentes.
+2. Adicionar seletor Grok por chat sem confundir model config de pi-agent-core com escolha de engine e preservando chats antigos.
+3. Usar RPC já autenticado para prompt/cancel; renderizar loading, deltas, resposta e erro do Grok nos atuais tipos de mensagem.
+4. Ao voltar para o chat, recuperar histórico via Overseer existente e status de runtime sem segunda store ou endpoint do Container.
+5. Garantir acessibilidade/estados disabled, denied tool permissions e recursos não disponíveis (sem arquivos, PTY e MCP).
+6. Executar testes de browser/Kumo e E2E de prompt real do Grok + reconnect; checar ausência de regressão do chat nativo.
 
-### Proposed integration data schema and API changes
-
-```typescript
-type AgentNavigationLink={workspaceId:string;agentId:string|null;taskId:string|null;chatId:number|null;engineKind:'workshop-native'|'acp-cli'|'native-cli'|'custom'}
-```
-
-Validate at boundaries, add JSON Schema where values cross Worker/process/storage, specify schema version and migrations. This is a draft shape to be reconciled with actual public types and Cap'n Web support before modifying kernel interfaces.
-
-### Implementation file map
-
-```text
-packages/workshop-frontend/
-  src/features/agent-sessions/ (new unified screens described in nested SPECS.md)
-  src/router/ (route integration; inspect existing layout)
-  src/__tests__/agent-navigation.browser.test.tsx
-  SPECS.md
-  plan.md
-```
-
-### Ownership, loops, security and backwards compatibility
-
-Integrate new feature-owned agent management into existing SPA navigation and Cap'n Web connection provider, using current Kumo UI patterns and avoiding a second authentication, query cache or approval interface. Native Code Mode must keep its current conversation UX; new Agent task drill-down is additive.
-
-**Legacy/source comparison:** Existing Workshop frontend SPECS, Kumo/@gadgets/ui, Grokbot dashboard/chat/file/terminal UI and F-001..F-017. Preserve all already-tested features and evidence. Do not introduce a parallel scheduler, MCP client policy, login authority, Cap'n Web transport or user-facing run-loop persistence.
-
-### Definition of done
-
-Source→target traceability, schema fixtures, existing test parity and new negative boundary tests, authenticated staging proof for new cross-worker behavior and migration-aware rollback. **Detailed steps:** [plan.md](./plan.md).
-
-
-## No-overlap integration correction (2026-10-13)
-
-Reference: [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS §23. **Owner:** The SPA already owns login/RpcContext, chat, action approvals, notifications, resource routing and Kumo UI. Unified Agent views are additive feature slices not new identity/approval client.
-
-**Gate before implementation:** Build AgentDefinition/task screens against current AuthenticatedApi, reuse existing tool/Gatekeeper approvals and accessible shared components; preserve old ChatInterface, Workpieces, Connections and notification UX.
-
-Any new agent-platform feature must preserve existing approved observations/actions, tenant scopes, Cap'n Web contract and consumer regressions. A documented proposed integration is not deployed functionality.
+**Non-goals in Phase 1:** Agent Registry, MCP Registry integration, tool gateways, scheduling, autonomous tasks, Codex/OpenCode, new Gatekeepers, generalized ACC and A/B. The only new docs-only runtime module is `packages/agent-runtime`. See [Phase 1 implementation](../../docs/architecture/PHASE1_GROK_MVP.md) and [this package's plan](./plan.md).

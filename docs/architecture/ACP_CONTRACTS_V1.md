@@ -1,5 +1,7 @@
 # ACP Platform — Canonical contracts v1
 
+> **SUPERSEDED AS ACTIVE IMPLEMENTATION PLAN — 2026-10-13:** [ROADMAP](../../ROADMAP.md) authorizes only Grok-in-Cloudflare-Container + existing Workshop chat in Phase 1. This page is **historical research, migration backlog or earlier audit snapshot**, not permission to implement any removed package. See [simplification decision](./SIMPLIFICATION_DECISION.md). Existing security contracts in root SPECS.md remain authoritative.
+
 > **Scope note (2026-10-13):** This v1 document specifies the ACP CLI session/runtime slice, not the entire autonomous agent platform. Canonical cross-engine AgentDefinition/Task/EngineDriver and AgentEvent contract is in [AGENT_PLATFORM_UNIFIED_V2](./AGENT_PLATFORM_UNIFIED_V2.md) with [machine-readable ACC schemas v2](./schemas/agent-platform-v2.schema.json). Existing v1 sessions require explicit migration, not silent reinterpretation.
 
 **Status:** normative architecture contract, NOT implemented. **Date:** 2026-10-13.

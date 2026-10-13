@@ -1,108 +1,127 @@
-# Agent Runtime — SPECS
+# agent-runtime — Grok Sandbox MVP (Phase 1 only)
 
-**Kind:** independently deployed Cloudflare Worker with SessionRuntime Durable Object and isolated Container.  
-**Status:** specification; implementation pending.
+> **STATUS: DOC_ONLY / NOT IMPLEMENTED.** The sole proposed new package during [Phase 1](../../ROADMAP.md). Avoid extracting a shared `acp-core`, `agent-harness-grok`, `agent-egress` or controller/registry until multiple proven consumers justify it.
 
-## Responsibility
+## 1. Mission and ownership
 
-Own sandbox provisioning, session/run/operation state, ACP supervision, event journaling, PTY lifecycle, generation fencing, checkpoint and recovery. It is not the identity provider and must accept only authenticated service-bound or narrowly scoped ticketed calls.
+Run ONE Grok Build CLI session per authorized Workshop chat in an isolated Cloudflare Container; expose private operations to Workshop backend and stream normalized status/text back to its EXISTING chat persistence and UI. This package owns runtime-only container process lifecycle, ACP request correlation and transient event replay. It owns **neither** workspace identities, native pi-agent-core/AgentSpawner chat state, permissions, the canonical chat transcript, MCP tools, nor a global agents catalog.
 
-## SessionRuntime Durable Object
+Source of truth: [ROADMAP](../../ROADMAP.md), [Phase 1 contract](../../docs/architecture/PHASE1_GROK_MVP.md), [existing ownership audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md).
 
-One logical AgentSession maps to one authoritative DO identity. The DO owns a monotonic event sequence and durable session/run/operation/approval/terminal/checkpoint records. Each container start increments sandboxGeneration. All control messages and tickets carry session ID and generation; stale generations are rejected.
-
-Every mutating request has an idempotency key and canonical request hash. Reusing the key with a different hash returns a conflict. Use optimistic session versioning or a DO transaction for concurrent state changes. A lease and heartbeat prevent two supervisors from acting as the current generation.
-
-## Container supervisor
-
-- Start only an image digest authorized by the release registry.
-- Launch the manifest's allowlisted harness command, not caller-provided shell.
-- Connect ACP stdio, PTY/tmux and bounded filesystem operations through the trusted sidecar.
-- Enforce process, CPU, memory, disk, wall-time, output and concurrency quotas.
-- Keep long-lived secrets outside the container; acquire upstream access through trusted egress.
-- Capture sanitized diagnostics and explicit exit reason.
-- Never report READY until the real ACP handshake succeeds and required capabilities are validated.
-
-## Event journal and browser reconnect
-
-Persist events before publishing them. Every event has schema version, session ID, optional run ID, generation, sequence, timestamp, type and bounded payload. Reconnect replays after a caller cursor; duplicate sequence numbers are forbidden. Browser disconnect does not cancel a run. Unknown or incompatible event schemas are surfaced as a protocol error and do not corrupt the journal.
-
-## Recovery and checkpoints
-
-Separate file snapshots from live process memory. A checkpoint records image/release compatibility, generation, filesystem manifest and checksums. Restore must be tested into a fresh container. If ACP state cannot be restored, report that limitation and reconstruct only through an explicit policy; never label a fresh session as a recovered session without provenance.
-
-Use R2 for exported archives only after checksum validation and successful restore tests. A successful snapshot call or HTTP health response alone is not proof of durable recovery.
-
-## Required endpoints / RPC
-
-Private API contracts must cover create, status, prompt, cancel, event replay, checkpoint, restore, stop, terminal ticket minting and bounded file inspection. Public exposure is forbidden until the caller authentication and resource policy are reviewed.
-
-## Tests and acceptance
-
-Test concurrent create/prompt/cancel, idempotency conflicts, stale generations, supervisor crash, container exit, partial stream, DO alarm/lease recovery, replay after browser reload, event retention, checkpoint checksum failure, restore in a fresh container, cross-session ticket rejection and hard quota enforcement. Add real Cloudflare staging E2E for all three harnesses.
-
-
-## Normative persisted contract and sequence
-
-Follow [ACP_CONTRACTS_V1](../../docs/architecture/ACP_CONTRACTS_V1.md) sections 1-5, 8 and 9. Implement DO SQLite logical records `Session`, `Run`, `Operation`, `AgentEvent`, `Approval`, `Checkpoint` with documented uniqueness/transaction invariants. Implement the independent Session Directory as **routing only**, not a second run-state authority. Define migrations before deployment. Every accepted prompt writes intent transactionally before dispatch and never retries an ambiguous physical execution automatically. A persisted release resolves to a configured immutable runtime target; protect pinned sessions on rollback. Implement replay with `retentionFloor` and CURSOR_EXPIRED, not a silent empty list. Recovered files do not prove restored ACP process state.
-
-
-## Unified Agent Platform v2 — executable implementation draft (2026-10-13)
-
-**New normative scope:** [Unified Architecture](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input ledger](../../docs/architecture/USER_INPUT_LEDGER.md), [Implementation stages](./plan.md). This section extends the earlier ACP/session-only description to agent definitions, independent Tasks, loop strategies, native Workshop engine parity, pluggable protocol drivers, subagents and tools where relevant. It is an IMPLEMENTATION DRAFT, not deployed code.
-
-### Data path and package dependencies
+## 2. Deployment and data diagram
 
 ```mermaid
-flowchart TD
- CP[Agent Control Plane] --> R[Agent Runtime Worker]
- R --> DO[SessionRuntime DO]
- DO --> OUT[Durable intent/outbox and event journal]
- DO --> CON[Cloudflare Container supervisor]
- CON --> SPI[EngineDriver ACP or native CLI]
- CON --> FS[PTY workspace Git filesystem]
- OUT --> ACC[Canonical event projection]
- FS --> R2[R2 checkpoint archive]
+flowchart TB
+ UI[Existing ChatInterface] --> W[Authenticated Workshop/Overseer]
+ W -->|internal service binding| WR[Grok Runtime Worker]
+ WR --> DO[Per-chat GrokSession Durable Object]
+ DO --> C[Cloudflare Container]
+ C --> SUP[Internal supervisor + JSON-RPC stdio]
+ SUP --> G[Grok CLI pinned version]
+ G -->|inference HTTPS only| EG[Trusted WorkerEntrypoint interception]
+ EG --> AI[Approved existing proxy/provider]
+ DO -->|events/receipt| W
+ W -->|persist + stream existing chat| UI
 ```
 
-### Canonical interfaces and data shapes to implement
+**Code packaging:** one new deployable Worker package with Container image/supervisor and embedded Grok ACP driver. No external MCP endpoint; `session/new({mcpServers:[]})`. Worker external HTTP routes: none (health probes only if required, no public control). No additional Gatekeeper. Use deployment service binding and typed RPC, not browser tickets.
+
+## 3. Minimal proposed TypeScript shapes (not implemented)
 
 ```typescript
-type SessionRecord={schemaVersion:1;agentSessionId:string;taskId:string|null;workspaceId:string;releaseId:string;runtimeTargetId:string;engineId:string;state:string;sandboxGeneration:number;sessionVersion:number;createdAt:string};
-type RuntimeDispatch={schemaVersion:1;operationId:string;taskId:string;agentSessionId:string;runId:string;idempotencyKey:string;requestHash:string;expectedSessionVersion:number;generation:number;permitRef:string};
-type CheckpointManifest={schemaVersion:1;checkpointId:string;sessionId:string;sourceGeneration:number;imageDigest:string;compatibilityId:string;archiveUri:string;sha256:string;byteSize:number;acpResumeProof:string|null}
+type GrokSessionRef = string;  // internal, server generated; not a public identifier
+type GrokState = "CREATED" | "STARTING" | "READY" | "RUNNING" |
+  "CANCEL_REQUESTED" | "UNKNOWN" | "ERROR" | "STOPPED";
+type GrokSessionRecord = {
+  schemaVersion:1; runtimeSessionId:GrokSessionRef;
+  workshopWorkspaceId:string; workshopChatId:number;
+  cliVersion:string; imageDigest:string; generation:number;
+  state:GrokState; acpSessionId:string|null; lastEventSequence:number;
+  createdAt:string; updatedAt:string;
+};
+type GrokInput = {schemaVersion:1;chatMessageSequence:number;idempotencyKey:string;text:string};
+type GrokEvent = {
+  schemaVersion:1;runtimeSessionId:string;generation:number;sequence:number;
+  kind:"text.delta"|"run.state"|"runtime.error"|"permission.denied";
+  payload:{text?:string;state?:GrokState;code?:string};
+  occurredAt:string;
+};
+type Accepted = {operationId:string;state:"ACCEPTED"|"ALREADY_ACCEPTED"};
+interface GrokRuntimePrivateRpc {
+  openChat(input:{workshopContextRef:string;chatId:number;idempotencyKey:string}):
+    Promise<{runtimeSessionId:string;state:GrokState}>;
+  sendPrompt(sessionId:string,input:GrokInput):Promise<Accepted>;
+  readEvents(sessionId:string,afterSequence:number,limit:number):
+    Promise<{events:GrokEvent[];nextSequence:number;hasMore:boolean}>;
+  cancel(sessionId:string,operationId:string):Promise<Accepted>;
+  close(sessionId:string,idempotencyKey:string):Promise<Accepted>;
+}
 ```
 
-These records must be validated against versioned ACC/ACP JSON Schema at Worker boundary, mapped to existing Cap'n Web capabilities where human/Gadget RPC is used, and have typed retryable versus UNKNOWN outcome errors. The schema fragments above are drafts; generated final validation and migrations are acceptance requirements.
+The exact authenticated private RPC capability must be reviewed with `workshop-shared`/backend before implementation. `workshopContextRef` is an unforgeable bound RPC context/reference or server-provided capability, **not** a self-asserted caller identity string. If runtime stores identifiers, it must verify the trusted calling service binding, caller context and pinned workspace/chat scope.
 
-### Proposed source layout
+## 4. Minimal transaction and ACP flow
+
+```mermaid
+sequenceDiagram
+ actor User
+ participant Chat as Existing Workshop chat
+ participant O as Overseer
+ participant R as GrokSession DO
+ participant C as Cloudflare Container
+ participant G as Grok ACP
+ User->>Chat: Select Grok; send text
+ Chat->>O: Existing authenticated chat RPC
+ O->>O: Persist user message + selected engine per chat
+ O->>R: openChat / sendPrompt idempotently
+ R->>R: Commit intent before dispatch
+ R->>C: Start container with safe outbound interception
+ C->>G: spawn grok --no-auto-update agent stdio
+ R->>G: initialize / session/new (mcpServers=[])
+ G-->>R: negotiated protocol + sessionId
+ R->>G: session/prompt
+ G-->>R: session/update + result
+ R->>R: Persist event sequence/replay
+ R-->>O: scoped events
+ O->>O: Dedup sequence; commit assistant output
+ O-->>Chat: existing chat stream/history
+```
+
+- ACP newline-delimited JSON-RPC via stdio, separate stderr, bounded requests, negotiated version (Grokbot 1.0.50 smoke used `protocolVersion:1`), typed errors, no unsupported native callback authorization.
+- One active prompt per runtime session. Every attempt has operationId and idempotency key. Timeout after dispatch => `UNKNOWN`, never automatic prompt replay; caller may close/start fresh manually.
+- Workshop Overseer remains canonical chat writer. The DO event journal is delivery/recovery state, not a second cross-workspace chat database. Reconnect by workspace-authorized event replay and idempotent append to Workshop.
+- Generation increments on restart. Process failure retains existing chat messages but *may not restore* Grok ACP session; do not promise `session/load` until proved.
+- No Git import, shell/PTY web controls, files browser, spawned subagent, timer, external hooks, or MCP in Phase 1.
+
+## 5. Process/network hardening
+
+- Source Grokbot PR #1 pinned source SHA `9171b11c7269f6f305e99fd697a4dd885aad5459` and fixtures in `services/sandbox-runtime/tools/acp-smoke.mjs`.
+- Reuse validated Container API invocation `container.start` + health wait + private bridge. Closed Cloudflare OS PR #2 was never merged, so its code must be reviewed/destilled before copying.
+- Start with denied unrestricted Internet (`enableInternet:false`) and explicit `interceptOutboundHttps` WorkerEntrypoint allowlisted provider route; correct ephemeral CA and ordinary TLS verification. Provider credentials only in Worker secret binding; never command/env/config sent to CLI.
+- No production `--always-approve` or `yoloMode:true` from smoke. First milestone is text conversation; unsafe tool requests receive explicit deny, and reply semantics are tested with real version.
+- Rate, frame, response, log and session limits. No CLI process escape from isolated workdir. Stop/fence stale container on chat closure or revocation; no public sessions endpoint.
+
+## 6. File layout draft
 
 ```text
 packages/agent-runtime/
-  src/{worker,session-runtime-do,directory,dispatch,outbox,journal,recovery,checkpoint}.ts
-  src/supervisor/{server,protocol-driver,process,pty,filesystem,git}.ts
-  src/storage/{schema,migrations}.ts
-  src/__tests__/{state,replay,stale-generation,crash,checkpoint,terminal}.test.ts
-  cloudflare.config.ts (generated wrangler.jsonc)
+  package.json
+  cloudflare.config.ts
+  Dockerfile
+  src/
+    worker.ts                 # private service RPC
+    grok-session-do.ts        # per-chat instance, generation + receipt + journal
+    cli/{launch,protocol,events}.ts
+    supervisor/{start,health,shutdown}.ts
+    egress/{intercept,worker-entrypoint}.ts
+    storage/{session,events}.ts
+  tests/{acp-smoke,stream,reconnect,auth,egress,regression}.test.ts
   SPECS.md
   plan.md
 ```
 
-### Semantics and concurrency
+Only create files as implementation is proved. Follow root release/config generation rules (`scripts/release`); no premature generalized runtime registry or multiple engines.
 
-Execution authority for CLI subprocess sessions. Control Plane Task DO owns task policy and loops; Runtime DO owns session/run/operation states and container generation. Every cross-service dispatch persists intent and returns accepted receipt; true completion via journal. Native Workshop engine does not require container, so runtime must not become authority for existing Overseer chat.
+## 7. Acceptance gate
 
-**Destillation/reference:** Grokbot PR#1 sandbox-runtime DO, session generation and terminal/files code; closed Cloudflare OS PR#2 low-level Container API fix; legacy Hub ACP transport. Pin actual source commit and test fixture before copying, and update F-001…F-017 migration evidence. Distinguish existing Workshop capabilities from new target components; no duplicate identity, scheduler, approval or MCP-import framework.
-
-### Acceptance
-
-A change is done only with strict schemas, migrated/verified data shapes, tests for idempotent admission, partial protocol messages, replay and crash/reconciliation, deny-by-default resource grants, source provenance and staging E2E for deployed services. Verify that core Workshop Code Mode and Gatekeeper simulation tests remain green.
-
-
-## Mandatory existing-module boundary / implementation gate (2026-10-13)
-
-Audit: [EXISTING_MODULE_BOUNDARIES_AUDIT.md](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), governing root SPECS §23. **Owner constraint:** The runtime is the exclusive owner of CLI SessionRuntime/Run/Operation/Container generation and checkpoint. It is NOT an alternate executor for the existing Workshop pi-agent-core native chat, not Task DO, not scheduler and not Gatekeeper grant/approval state.
-
-**Before beginning tasks in this package:** Prove Task DO↔Runtime DO cross-DO operation/outbox and UNKNOWN outcomes; use release-assigned binding, safe PTY/rooted filesystem, no uncontrolled public endpoint. Compare Grokbot generation and cloudflare-os PR#2 low-level Container API evidence.
-
-The directory is DOC_ONLY until package.json, actual source, schema tests and correct Worker configuration are added. No new runtime is implemented by the spec revision. Every relevant plan item requires source→target evidence, typed contract checks, approval/identity threat tests and real worker E2E when applicable.
+A real authenticated chat in the EXISTING Workshop UI selects Grok, launches one isolated Cloudflare Container, exchanges `initialize/session/new/session/prompt`, displays streamed text and stores/replays chat history. Cancel/error/revocation are visible and safe, no credentials leaked, no native runAgent regressions. Build, unit, integration and real Cloudflare staging E2E evidence must be linked. Until then **NOT IMPLEMENTED**.
