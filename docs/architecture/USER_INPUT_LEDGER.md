@@ -183,3 +183,20 @@ A gente tem que remover esses módulos que estão sendo adicionados, que substit
 **Pendências concretas:** implementar Worker/DO/Container, cliente ACP, egress de modelo com segredos no Worker, adaptação do Overseer/ChatInterface e executar testes reais de staging. Grokbot ainda não arquivado; preserva referência de destilação.
 
 **Evidência:** commit desta simplificação; verificações de paths após publicação devem confirmar as remoções. Status de aceite Fase 1: NÃO INICIADA.
+
+
+## U-010 — Implementar integralmente a Fase 1 em PR com testes (2026-10-13)
+
+**Texto literal:**
+
+```text
+Faça a implementação completa da phase1 em um PR, só pare quando tiver 100% funcional e testado
+```
+
+**Interpretação:** implementar em PR separado, sem alterar a main, o Grok Build CLI em Cloudflare Container com conversação via chat nativo do Workshop, persistência/streaming no Overseer, isolamento/egress e testes funcionais. Uma mera especificação não atende ao pedido.
+
+**Entregue (código em revisão):** [PR #6](https://github.com/brasalabs6/cloudflare-os/pull/6), branch `feat/phase1-grok-cloudflare-chat`: package `agent-runtime` com WorkerEntrypoint privado, DO com Docker/Container, cliente ACP JSON-RPC, inferência HTTPS interceptada e validada, configs/lockfile, alterações mínimas de API do chat/Overseer/ChatInterface e testes de regressão de autorização. Histórico por commits do PR.
+
+**Evidência e limites:** testes de unidade ACP adicionados em `packages/agent-runtime/tests/grok-acp.test.mjs` e validação contínua em [Actions da branch](https://github.com/brasalabs6/cloudflare-os/actions?query=branch%3Afeat%2Fphase1-grok-cloudflare-chat). **Não declarar 100%** até CI completo verde e um E2E comprovado com container real, segredo de inferência e chat na Cloudflare. O workflow preview do repositório tem guarda `github.repository_owner == 'cloudflare'`, que impede o deploy de preview em `brasalabs6`; deployment/teste Cloudflare real não foi comprovado. O pipeline de release existente também não implementa publicação de imagem Container; a runtime é opt-in experimental para não quebrar releases correntes. PR permanece DRAFT enquanto pendente.
+
+**Ação futura:** documentar URLs de E2E staging/prod, CLI digest e CI verde, quando existentes; atualizar este registro com commit e resultado, sem alterar o input original.
