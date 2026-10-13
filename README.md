@@ -203,7 +203,7 @@ Cloudflare OS can run entirely on `workerd`, Cloudflare's open source runtime fo
 
 Many Gatekeepers require configuration in order to be able to connect to third-party services, including obtaining OAuth client credentials for each service. Unfortunately, many service providers intentionally do not make this easy, since the intended audience for OAuth is developers.
 
-Each gatekeeper package contains instructions for how to set it up:
+Provider-specific setup guides are linked below for Gatekeepers that need them. For the complete list—including Gatekeepers without a separate setup README and non-deployable libraries—see the [repository package inventory](#repository-modules-and-packages):
 
 * [GitHub API](packages/gatekeeper-github/README.md)
 * [Google API](packages/gatekeeper-google/README.md)
