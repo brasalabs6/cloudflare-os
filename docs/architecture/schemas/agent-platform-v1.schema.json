@@ -1,0 +1,327 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.brasalabs.dev/cloudflare-os/agent-platform/v1.json",
+  "title": "Cloudflare OS ACP Platform Public Contracts v1",
+  "description": "Normative draft contract for validation; implementation pending. Internal authorization context is not serializable by this schema.",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "category",
+        "retryable",
+        "message",
+        "retryAfterMs",
+        "operationId"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "category": {
+          "enum": [
+            "VALIDATION",
+            "AUTHORIZATION",
+            "CONFLICT",
+            "PROTOCOL",
+            "HARNESS",
+            "RUNTIME",
+            "EGRESS",
+            "STORAGE",
+            "UNKNOWN_OUTCOME"
+          ]
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "retryAfterMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "operationId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "agentSessionId",
+        "agentRunId",
+        "generation",
+        "sequence",
+        "eventId",
+        "occurredAt",
+        "type",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "agentSessionId": {
+          "$ref": "#/$defs/id"
+        },
+        "agentRunId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "eventId": {
+          "$ref": "#/$defs/id"
+        },
+        "occurredAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "payload": {
+          "type": "object",
+          "maxProperties": 100
+        }
+      }
+    },
+    "rpcRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "requestId",
+        "agentSessionId",
+        "expectedGeneration",
+        "idempotencyKey",
+        "expectedSessionVersion",
+        "body"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "requestId": {
+          "$ref": "#/$defs/id"
+        },
+        "agentSessionId": {
+          "$ref": "#/$defs/id"
+        },
+        "expectedGeneration": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "idempotencyKey": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 160
+        },
+        "expectedSessionVersion": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "body": {
+          "type": "object"
+        }
+      }
+    },
+    "rpcSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "ok",
+        "requestId",
+        "result",
+        "sessionVersion",
+        "eventCursor"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "ok": {
+          "const": true
+        },
+        "requestId": {
+          "$ref": "#/$defs/id"
+        },
+        "result": {
+          "type": "object"
+        },
+        "sessionVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "eventCursor": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "rpcFailure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "ok",
+        "requestId",
+        "error"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "ok": {
+          "const": false
+        },
+        "requestId": {
+          "$ref": "#/$defs/id"
+        },
+        "error": {
+          "$ref": "#/$defs/error"
+        }
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "releaseId",
+        "runtimeTargetId",
+        "imageDigest",
+        "harnessId",
+        "harnessVersion",
+        "adapterVersion",
+        "protocolFixtureDigest",
+        "configSchemaVersion",
+        "permissionPolicyVersion",
+        "checkpointCompatibilityId",
+        "state",
+        "createdAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "releaseId": {
+          "$ref": "#/$defs/id"
+        },
+        "runtimeTargetId": {
+          "$ref": "#/$defs/id"
+        },
+        "imageDigest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "harnessId": {
+          "enum": [
+            "grok-build",
+            "codex",
+            "opencode"
+          ]
+        },
+        "harnessVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapterVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "protocolFixtureDigest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "configSchemaVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "permissionPolicyVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "checkpointCompatibilityId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "enum": [
+            "CANDIDATE",
+            "ACTIVE",
+            "DRAINING",
+            "DISABLED"
+          ]
+        },
+        "createdAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/event"
+    },
+    {
+      "$ref": "#/$defs/rpcRequest"
+    },
+    {
+      "$ref": "#/$defs/rpcSuccess"
+    },
+    {
+      "$ref": "#/$defs/rpcFailure"
+    },
+    {
+      "$ref": "#/$defs/release"
+    }
+  ]
+}
