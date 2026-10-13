@@ -53,6 +53,12 @@ jobs:
       - name: Check generated worker configs
         run: pnpm configs:check
 
+      - name: Test README package inventory checker
+        run: pnpm docs:packages:test
+
+      - name: Check README package inventory
+        run: pnpm docs:packages:check
+
   test:
     name: Build and test
     runs-on: ubuntu-latest
