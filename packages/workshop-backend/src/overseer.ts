@@ -7966,7 +7966,7 @@ class OverseerImpl implements AgentHooks {
           current.lastActive = this.getChatTimestamp();
           this.storage.chatMeta.put(current);
         }
-        sink[Symbol.dispose]?.();
+        // RPC callback is scoped to this invocation and released with the RPC lease.
       }
     })());
   }
