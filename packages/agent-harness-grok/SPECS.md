@@ -22,3 +22,8 @@ Review GrokBot PR #1 runtime/session code for generation fencing, terminal, file
 ## Tests and acceptance
 
 Run real sandbox tests for initialize, new session, prompt, tool event, filesystem write, cancellation, permission round-trip, terminal, reload/replay and checkpoint restore. Document the exact tested image/CLI versions and mark staging evidence separately from production.
+
+
+## Version-specific executable contract
+
+Canonical platform envelopes and state fields: [ACP_CONTRACTS_V1](../../docs/architecture/ACP_CONTRACTS_V1.md) §§2–6,10. Distill Grokbot PR #1 (`services/sandbox-runtime/tools/acp-smoke.mjs`, `tools/run-grok.sh`, `Dockerfile`, `src/index.ts`) with an explicit source SHA. Proven development fixture: Grok 1.0.50, `grok --no-auto-update agent --no-leader --model <approved-alias> stdio`; the disposable smoke test used `--always-approve` and must **never** be generalized to interactive production permissions. Probe initialize includes `protocolVersion:1`, `clientCapabilities`, `clientInfo`. Use the CLI supported/verified exact schema, not a generic assumed ACP version. Tests must prove `session/new`, prompt/tool event, permission callback, cancellation, stdout framing, non-root launch and egress interception with no credentials in the container. Version pin is illustrative source evidence until the actual registry release pins tested image digest and CLI binary hash.
