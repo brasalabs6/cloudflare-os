@@ -19,8 +19,7 @@ function assertText(text: string) {
 
 /** Private Worker service RPC; no HTTP route grants access to a container. */
 export default class GrokRuntime extends WorkerEntrypoint<Env> {
-  // The default WorkerEntrypoint is the only service-binding RPC ingress.
-  // There is deliberately no public HTTP API for the Grok sandbox.
+  /** Reject every public HTTP request; only service-binding RPC may control Grok. */
   fetch(): Response {
     return Response.json({ error: "PRIVATE_WORKER" }, { status: 404 });
   }
