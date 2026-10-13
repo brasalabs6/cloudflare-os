@@ -34,8 +34,6 @@ flowchart TB
   Runtime --> Containers["Isolated Containers + ACP harnesses"]
 ```
 
-```
-
 ## 3. Ownership and boundaries
 
 | Module (proposed package) | Owns / authority | Does not own |
