@@ -152,7 +152,7 @@ export class GrokSandbox extends DurableObject<Env> {
     if (!secret) throw new Error("GROK_DAEMON_SECRET_MISSING");
     let upstream: Response | undefined;
     // Container.start is asynchronous; TCP port availability is not readiness.
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 120; i++) {
       const key = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
       const req = new Request(
         "http://container/ws?server-key=" + encodeURIComponent(secret), {
@@ -237,12 +237,15 @@ export class GrokSandbox extends DurableObject<Env> {
     }
     this.inFlight = operationId;
     let output = "";
-    const deliveries: Promise<void>[] = [];
+    let deliveryChain: Promise<void> = Promise.resolve();
     try {
       await this.ensureAcpConnected();
       this.peer!.onText = (delta: string) => {
         output += delta;
-        if (sink) deliveries.push(sink.text(delta).catch(() => { /* browser disconnected */ }));
+        // Preserve text-delta order across independent cross-Worker RPC calls.
+        if (sink) deliveryChain = deliveryChain
+          .then(() => sink.text(delta))
+          .catch(() => { /* observer was disconnected; authoritative final reply persists */ });
         if (output.length > MAX_RESPONSE_CHARS) {
           this.peer?.abort(new Error("GROK_RESPONSE_TOO_LARGE"));
         }
@@ -250,7 +253,7 @@ export class GrokSandbox extends DurableObject<Env> {
       const result = await this.peer!.request("session/prompt", {
         sessionId: this.acpId, prompt: [{ type: "text", text }]
       });
-      await Promise.all(deliveries);
+      await deliveryChain;
       const final: PromptResult = {
         status: result?.stopReason === "cancelled" ? "CANCELLED" : "SUCCEEDED",
         text: output
@@ -275,11 +278,24 @@ export class GrokSandbox extends DurableObject<Env> {
   }
 
   async cancel(): Promise<void> {
-    if (!this.peer || !this.acpId || !this.inFlight) return;
-    // ACP cancel is a notification and cannot promise rollback of tool effects.
-    this.socket?.send(JSON.stringify({
-      jsonrpc: "2.0", method: "session/cancel", params: { sessionId: this.acpId }
-    }));
+    // A healthy in-flight prompt has an ACP cancellation path. Cancellation
+    // does not retroactively undo external side effects.
+    if (this.peer && this.acpId && this.inFlight) {
+      this.socket?.send(JSON.stringify({
+        jsonrpc: "2.0", method: "session/cancel", params: { sessionId: this.acpId }
+      }));
+      return;
+    }
+    // After a DO eviction/crash there may be a durable active operation without
+    // an active ACP peer. An explicit user cancel is permitted to abandon that
+    // attempt and destroy the old generation. The old intent remains fenced.
+    const abandoned = await this.ctx.storage.get<string>("activeOperation");
+    if (!abandoned) return;
+    if (this.container.running) await this.container.destroy("User cancelled lost Grok execution");
+    await this.ctx.storage.delete("activeOperation");
+    await this.ctx.storage.delete("acpSessionId");
+    await this.ctx.storage.delete("daemonSecret");
+    await this.ctx.storage.put("abandoned:" + abandoned, "OUTCOME_UNKNOWN");
   }
 }
 
