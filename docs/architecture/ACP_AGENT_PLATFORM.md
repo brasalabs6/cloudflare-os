@@ -155,3 +155,8 @@ A gate is not complete because a Worker returns HTTP 200. Acceptance requires re
 - Codex ACP: https://github.com/agentclientprotocol/codex-acp
 - OpenCode ACP: https://docs.opencode.ai/docs/pt-br/acp/
 - Cloudflare Sandbox docs: https://developers.cloudflare.com/changelog/post/2026-09-30-sandbox-sdk-1-0/
+
+
+## 13. Normative data/flow contract (2026-10-13)
+
+**[ACP_CONTRACTS_V1.md](./ACP_CONTRACTS_V1.md) is the normative source of truth** for serialized envelopes, logical schema fields, ID ownership, transaction ordering, event types, ACP bridge semantics, release routing and rollback. This overview describes responsibilities, but must not be used as an executable interface. Where this overview is less specific, the canonical contract prevails. New work must produce schema validators, migrations and contract fixtures against that document. cloudflare-os PRs #2 and #3 were closed, not merged. The Grokbot code is extraction-only and must not become a parallel production service.
