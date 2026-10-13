@@ -10,7 +10,6 @@ const PROXY_URL = "https://" + PROXY_HOST + "/v1/chat/completions";
 const AI_MODEL = "@cf/qwen/qwen3.8-27b";
 const MAX_PROMPT_BYTES = 65_536;
 const MAX_RESPONSE_CHARS = 250_000;
-const BINARY_VERSION = "1.0.50";
 
 function assertText(text: string) {
   if (!text || new TextEncoder().encode(text).length > MAX_PROMPT_BYTES) {
@@ -31,14 +30,23 @@ export class GrokRuntime extends WorkerEntrypoint<Env> {
     // The caller is the trusted Workshop service binding. Do not expose this
     // method by HTTP or accept a browser token as proof of Workspace access.
     const name = workspaceId + ":" + chatId;
-    return this.ctx.exports.GrokSandbox.getByName(name).prompt(prompt, operationId, sink);
+    const ns = (this.ctx.exports as unknown as {
+      GrokSandbox: { getByName(id: string): {
+        prompt(text: string, operationId: string,
+          sink?: { text(delta: string): Promise<void> }): Promise<PromptResult>
+      } }
+    }).GrokSandbox;
+    return ns.getByName(name).prompt(prompt, operationId, sink);
   }
 
   async cancel(workspaceId: string, chatId: number) {
     if (!workspaceId || !Number.isSafeInteger(chatId) || chatId < 0) {
       throw new Error("GROK_INVALID_SCOPE");
     }
-    return this.ctx.exports.GrokSandbox.getByName(workspaceId + ":" + chatId).cancel();
+    const ns = (this.ctx.exports as unknown as {
+      GrokSandbox: { getByName(id: string): { cancel(): Promise<void> } }
+    }).GrokSandbox;
+    return ns.getByName(workspaceId + ":" + chatId).cancel();
   }
 }
 
@@ -111,13 +119,15 @@ export class GrokSandbox extends DurableObject<Env> {
     return this.ctx.container;
   }
 
-  private async connect(): Promise<void> {
+  private async ensureAcpConnected(): Promise<void> {
     if (this.peer && !this.peer.closed && this.acpId) return;
     if (!this.container.running) {
       // Egress interception MUST precede start. The container gets only a
       // daemon authentication secret, never the provider credential.
       await this.container.interceptOutboundHttps(
-        PROXY_HOST, this.ctx.exports.GrokEgress({ props: {} }));
+        PROXY_HOST, (this.ctx.exports as unknown as {
+          GrokEgress(options: {props:{}}): Fetcher
+        }).GrokEgress({ props: {} }));
       const secret = crypto.randomUUID() + crypto.randomUUID();
       await this.ctx.storage.put("daemonSecret", secret);
       this.container.start({
@@ -209,7 +219,7 @@ export class GrokSandbox extends DurableObject<Env> {
     let output = "";
     const deliveries: Promise<void>[] = [];
     try {
-      await this.connect();
+      await this.ensureAcpConnected();
       this.peer!.onText = (delta: string) => {
         output += delta;
         if (sink) deliveries.push(sink.text(delta).catch(() => { /* browser disconnected */ }));

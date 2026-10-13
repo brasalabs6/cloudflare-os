@@ -3,7 +3,7 @@
  * The Grokbot smoke source used protocolVersion 1 and session/new.
  */
 export class GrokAcpPeer {
-  constructor(socket, { timeoutMs = 150_000, onText = () => {} } = {}) {
+  constructor(socket, { timeoutMs = 150_000, onText = (_delta) => {} } = {}) {
     this.socket = socket;
     this.timeoutMs = timeoutMs;
     this.onText = onText;
