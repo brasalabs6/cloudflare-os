@@ -18,3 +18,8 @@ Negotiate ACP initialize capabilities. Implement session creation, prompt, event
 ## Tests and acceptance
 
 Run real Cloudflare sandbox tests for initialize/new/prompt/tool events/cancel, file permissions, model/provider allowlisting, config isolation, egress bypass attempts, reconnect and container restart. Record exact tested CLI/adapter versions. Passing a mocked protocol fixture alone is not acceptance.
+
+
+## Version-specific executable contract
+
+Canonical shape: [ACP_CONTRACTS_V1](../../docs/architecture/ACP_CONTRACTS_V1.md) §§2–6,10. Production manifest pins OpenCode CLI version, image digest, executable hash, ACP protocol fixture checksum, model/provider mapping and isolated `HOME`/config/workspace location. Launch the version-tested `opencode acp` command with no runtime-supplied arbitrary arguments. Test initialization response, negotiated model/mode choices, `session/new`, prompt, permission callbacks, updates, cancel and restart semantics. Reconnection cannot claim ACP session restoration unless `session/load` is both negotiated and shown to work with the pinned version. Unknown provider/model IDs fail closed; isolate caches and egress per session.
