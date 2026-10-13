@@ -8,10 +8,12 @@
 - Before editing, inspect the relevant `README.md`, `ROADMAP.md`, `SPECS.md`, package metadata, `pnpm-workspace.yaml`, actual interfaces and implementations, tests, CI, Wrangler/config generation and deployment boundaries. A proposal or specs-only directory is not a working package.
 - This is a pnpm monorepo using TypeScript, React/Vite, Cloudflare Workers, Durable Objects, Dynamic Worker Facets, Cap'n Web RPC, and separate Gatekeeper Workers. Do not guess package ownership from names alone. In particular, `gatekeeper-kit` and `mcp-shared` are libraries, not independently deployable Workers.
 - Read `docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md` before extending the agent platform. Inspect the relevant package source, not only architecture documents.
+- Keep the exhaustive inventory in the root `README.md` in sync with every `packages/*` directory and the `scripts/` workspace package; update it in the same PR when a package is created, renamed, removed or changes name. Distinguish an installable package from a specs-only directory. Run `pnpm docs:packages:check` and its tests (`pnpm docs:packages:test`); CI enforces this.
 
 ## Maturity, compatibility and scope
 
 - Treat the repository as an actively evolving platform with security-critical, tested interfaces and potentially deployed consumers. Do **not** infer that internal/public contracts may be broken just because an initiative is pre-production; confirm the consumer and deployment impact first.
+- The root README explicitly labels the software as **early access**, not as a blanket license to break existing interfaces; its documented deployments, integrations and shared contracts require compatibility review. Do not assert an unverified production/non-production status for every deployment.
 - Preserve existing native chat behavior, Cap'n Web RPC contracts, Gatekeeper capability/approval rules, workspace ownership, environment bindings, persisted data and release compatibility unless an explicitly reviewed change authorizes otherwise. Breaking interfaces need identified consumers, a migration and rollback strategy.
 - Keep each change within the requested scope. Do not bundle broad cleanup, dependency upgrades, architectural redesign, or compatibility shims into unrelated work. Do not preserve obsolete paths without a reason, but establish that they are truly unused before deleting them.
 - The **active implementation priority** is `ROADMAP.md` Phase 1: Grok CLI in an isolated Cloudflare Sandbox/Container through the existing Workshop chat. Reuse Overseer, chat history/streaming, authentication and approval mechanisms; keep the minimum Grok/ACP-specific runtime in the planned `packages/agent-runtime`. No new MCP server, registries, gateway, scheduler, competing chat UI, or speculative packages in Phase 1. Later roadmap phases are blocked until their gates are met.
@@ -31,10 +33,11 @@
 
 ## Tests, generated files, and review
 
-- For behavioral changes, use red-green-refactor where practical: first a meaningful failing behavior/regression test, then the minimum implementation, then a green test and focused refactor. Test real contract boundaries and authorization; mocks must reflect the actual schema. Do not add production-only hooks just to simplify tests.
+- For behavior changes and bug fixes, follow red-green-refactor: establish a real failing behavior/regression test **for the intended reason**, implement the minimum change, verify it turns green, then refactor without changing behavior. If a meaningful automated test or verified external contract is unavailable, surface that limitation before asserting success; never disguise a mock-only check as a passing integration test. Do not add production-only hooks merely to simplify tests.
 - For stable/external/cross-repository contracts, add or update contract tests grounded in the real shared schema. If a required schema cannot be verified, resolve the contract gap before changing it.
 - Documentation-only changes need review of Markdown, paths, semantics and applicability; do not invent runtime tests. Validate affected packages instead of always running the entire monorepo.
 - Do not hand-edit generated Worker configs, types, clients or bundles. Update their sources and run the repository generator. Lockfile changes must follow the pnpm toolchain and supply-chain policy.
+- Avoid new dependencies unless they solve a demonstrated problem that current libraries or platform primitives do not; assess Worker compatibility, bundle size, maintenance, licenses, security and transitive supply-chain impact. Never add a dependency solely for a small README or CI consistency check.
 - Use the commands **as defined by current scripts**: `pnpm test`, `pnpm build`, `pnpm lint:check`, `pnpm configs:check`, and targeted package scripts where appropriate. Never claim a command passed unless it ran.
 - Review kernel changes (`packages/workshop-backend` and public `packages/workshop-shared` APIs) especially carefully and prefer small, independently reviewable diffs. Preserve the existing package-specific guidance below.
 
