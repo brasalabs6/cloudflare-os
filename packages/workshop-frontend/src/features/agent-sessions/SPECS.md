@@ -41,3 +41,52 @@ Browser E2E covers create, prompt, streaming, approval round-trip, terminal atta
 ## Canonical UI wire/replay contract
 
 Consume the authorized `RuntimeResult`, `AgentEvent`, `RunState` and `SessionState` shapes defined in [ACP_CONTRACTS_V1](../../../../../docs/architecture/ACP_CONTRACTS_V1.md). Store `lastSeenSequence` per session for reconnect; deduplicate `(agentSessionId,sequence)` and explicitly handle CURSOR_EXPIRED with consistent snapshot/refetch. Display OUTCOME_UNKNOWN without automatic retry; preserve pending permission request identities and expiry. Provide Git status/diff, operation progress, logs and notification behavior from Grokbot F-001–F-017 as explicit migration checklist items rather than silently omitting them. Terminal must use a separately granted Computer capability and single-use ticket.
+
+
+## Unified Agent Platform v2 — executable implementation draft (2026-10-13)
+
+**New normative scope:** [Unified Architecture](../../../../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input ledger](../../../../../docs/architecture/USER_INPUT_LEDGER.md), [Implementation stages](./plan.md). This section extends the earlier ACP/session-only description to agent definitions, independent Tasks, loop strategies, native Workshop engine parity, pluggable protocol drivers, subagents and tools where relevant. It is an IMPLEMENTATION DRAFT, not deployed code.
+
+### Data path and package dependencies
+
+```mermaid
+flowchart TD
+ API[Authenticated Workshop RPC] --> Store[Agent/Task/Session data cache]
+ Replay[ACC events replay] --> Store
+ Store --> Agent[Agent definitions/editor]
+ Store --> Task[Tasks timeline/loops]
+ Store --> Child[Subagent tree/protocol extensions]
+ Store --> Console[Computer PTY and files]
+ Store --> Approval[Gatekeeper and ACP approvals]
+```
+
+### Canonical interfaces and data shapes to implement
+
+```typescript
+type AgentViewState={agentId:string;revision:number;taskIds:string[];permissions:string[];engines:EngineDescriptor[]};
+type TaskEventCursor={taskId:string;streamId:string;lastSequence:number;retentionFloor:number};
+type ProtocolPanel={engineId:string;namespace:string;schemaRef:string;readOnly:boolean;controls:string[]}
+```
+
+These records must be validated against versioned ACC/ACP JSON Schema at Worker boundary, mapped to existing Cap'n Web capabilities where human/Gadget RPC is used, and have typed retryable versus UNKNOWN outcome errors. The schema fragments above are drafts; generated final validation and migrations are acceptance requirements.
+
+### Proposed source layout
+
+```text
+packages/workshop-frontend/src/features/agent-sessions/
+  src/features/agent-sessions/{AgentDashboard,AgentEditor,TaskDetail,TaskTimeline,ChildTree,LoopControls,ToolApprovals,EngineInspector,TerminalPanel,FileExplorer}.tsx
+  src/features/agent-sessions/{useAgentEvents,useTaskActions,agentEventReducer}.ts
+  src/features/agent-sessions/*.test.tsx
+  SPECS.md
+  plan.md
+```
+
+### Semantics and concurrency
+
+One front-end for native Workshop, ACP Grok/Codex/OpenCode and future native protocols; engine feature differences expressed by capability flags and safe protocol.extensions inspector, not branching entire app by provider. Agent list and editor, scheduled/background Tasks, per-run timelines, real subagent graph, command/tool events, approval queue, files/terminal/Git, usage, budget and ops/recovery. Keep existing chat UI behavior and current workpieces.
+
+**Destillation/reference:** Grokbot components dashboard, session-detail, acp-chat, agent-terminal, file-browser and F-001..F-017; existing Workshop frontend chat/approval and Kumo shared UI. Pin actual source commit and test fixture before copying, and update F-001…F-017 migration evidence. Distinguish existing Workshop capabilities from new target components; no duplicate identity, scheduler, approval or MCP-import framework.
+
+### Acceptance
+
+A change is done only with strict schemas, migrated/verified data shapes, tests for idempotent admission, partial protocol messages, replay and crash/reconciliation, deny-by-default resource grants, source provenance and staging E2E for deployed services. Verify that core Workshop Code Mode and Gatekeeper simulation tests remain green.

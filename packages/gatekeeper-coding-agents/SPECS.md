@@ -61,3 +61,52 @@ Follow .agents/skills/write-gatekeeper/SKILL.md and SKELETON.md. Create src/type
 ## Authority and executable contract prerequisites
 
 See [ACP_CONTRACTS_V1](../../docs/architecture/ACP_CONTRACTS_V1.md) sections 1, 3, 4 and 7. Treat the public TypeScript API above as a PROPOSAL until Cap'n Web-compatible `src/types.d.ts` and the generated `src/types.txt` are reviewed per the existing Gatekeeper authoring guide. In particular, a `submitAction` record must not physically spawn or mutate a runtime until approved `applyAction`; the queued response cannot claim the process ran. ACP `session/request_permission` is a separate approval namespace and cannot silently be simulated as an applied external action. All reads exposed to Gadgets use `authorizeObservation` and the existing observer semantics; human Workshop control uses its independently authenticated path.
+
+
+## Unified Agent Platform v2 — executable implementation draft (2026-10-13)
+
+**New normative scope:** [Unified Architecture](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input ledger](../../docs/architecture/USER_INPUT_LEDGER.md), [Implementation stages](./plan.md). This section extends the earlier ACP/session-only description to agent definitions, independent Tasks, loop strategies, native Workshop engine parity, pluggable protocol drivers, subagents and tools where relevant. It is an IMPLEMENTATION DRAFT, not deployed code.
+
+### Data path and package dependencies
+
+```mermaid
+flowchart TD
+ Gadget[Gadget or Agent] --> Cap[Scoped CodingAgents capability]
+ Cap --> GK[Gatekeeper Worker]
+ GK --> Decision{Observation or Action}
+ Decision -->|observation| OBS[authorizeObservation]
+ Decision -->|action| SUB[submitAction]
+ SUB --> APPLY[ApprovalQueue applyAction]
+ APPLY --> CP[Control Plane Task/Agent RPC]
+ OBS --> CP
+```
+
+### Canonical interfaces and data shapes to implement
+
+```typescript
+interface CodingAgents {list(options?:{cursor?:string;limit?:number}):Promise<{agents:AgentSummary[];nextCursor:string|null}>;get(agentId:string):Promise<CodingAgent|null>;createAgent(spec:AgentDefinitionDraft,idempotencyKey:string):Promise<ProposedAgent>}
+interface CodingAgent {getDefinition():Promise<AgentDefinitionView>;listTasks(cursor?:string):Promise<TaskPage>;submitTask(input:TaskInput,idempotencyKey:string):Promise<ProposedTask>;pause():Promise<ActionReceipt>;spawnChildTask(input:ChildTaskInput):Promise<ProposedTask>}
+```
+
+These records must be validated against versioned ACC/ACP JSON Schema at Worker boundary, mapped to existing Cap'n Web capabilities where human/Gadget RPC is used, and have typed retryable versus UNKNOWN outcome errors. The schema fragments above are drafts; generated final validation and migrations are acceptance requirements.
+
+### Proposed source layout
+
+```text
+packages/gatekeeper-coding-agents/
+  src/{types.d.ts,worker,account,facet,permissions,action-store,observations,session}.ts
+  src/__tests__/{capnweb,observer,actions,grants,task-pending}.test.ts
+  cloudflare.config.ts and generated src/types.txt
+  SPECS.md
+  plan.md
+```
+
+### Semantics and concurrency
+
+Extend beyond coding sessions to AgentDefinitions, Tasks, trigger inspection and bounded agent/child work, but never mix human direct execution with Gadget deferred actions. Draft capability surface requires explicit operator API review BEFORE implementing worker internals; only submitted action appears simulated pending until approved applyAction. Observations call authorizeObservation.
+
+**Destillation/reference:** Existing .agents/skills/write-gatekeeper/SKILL.md, gatekeeper-kit, workshop-shared gatekeeper.ts, AgentSpawnerConfig; Grokbot authorization reference. Pin actual source commit and test fixture before copying, and update F-001…F-017 migration evidence. Distinguish existing Workshop capabilities from new target components; no duplicate identity, scheduler, approval or MCP-import framework.
+
+### Acceptance
+
+A change is done only with strict schemas, migrated/verified data shapes, tests for idempotent admission, partial protocol messages, replay and crash/reconciliation, deny-by-default resource grants, source provenance and staging E2E for deployed services. Verify that core Workshop Code Mode and Gatekeeper simulation tests remain green.

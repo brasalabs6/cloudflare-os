@@ -45,3 +45,55 @@ Test concurrent create/prompt/cancel, idempotency conflicts, stale generations, 
 ## Normative persisted contract and sequence
 
 Follow [ACP_CONTRACTS_V1](../../docs/architecture/ACP_CONTRACTS_V1.md) sections 1-5, 8 and 9. Implement DO SQLite logical records `Session`, `Run`, `Operation`, `AgentEvent`, `Approval`, `Checkpoint` with documented uniqueness/transaction invariants. Implement the independent Session Directory as **routing only**, not a second run-state authority. Define migrations before deployment. Every accepted prompt writes intent transactionally before dispatch and never retries an ambiguous physical execution automatically. A persisted release resolves to a configured immutable runtime target; protect pinned sessions on rollback. Implement replay with `retentionFloor` and CURSOR_EXPIRED, not a silent empty list. Recovered files do not prove restored ACP process state.
+
+
+## Unified Agent Platform v2 — executable implementation draft (2026-10-13)
+
+**New normative scope:** [Unified Architecture](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input ledger](../../docs/architecture/USER_INPUT_LEDGER.md), [Implementation stages](./plan.md). This section extends the earlier ACP/session-only description to agent definitions, independent Tasks, loop strategies, native Workshop engine parity, pluggable protocol drivers, subagents and tools where relevant. It is an IMPLEMENTATION DRAFT, not deployed code.
+
+### Data path and package dependencies
+
+```mermaid
+flowchart TD
+ CP[Agent Control Plane] --> R[Agent Runtime Worker]
+ R --> DO[SessionRuntime DO]
+ DO --> OUT[Durable intent/outbox and event journal]
+ DO --> CON[Cloudflare Container supervisor]
+ CON --> SPI[EngineDriver ACP or native CLI]
+ CON --> FS[PTY workspace Git filesystem]
+ OUT --> ACC[Canonical event projection]
+ FS --> R2[R2 checkpoint archive]
+```
+
+### Canonical interfaces and data shapes to implement
+
+```typescript
+type SessionRecord={schemaVersion:1;agentSessionId:string;taskId:string|null;workspaceId:string;releaseId:string;runtimeTargetId:string;engineId:string;state:string;sandboxGeneration:number;sessionVersion:number;createdAt:string};
+type RuntimeDispatch={schemaVersion:1;operationId:string;taskId:string;agentSessionId:string;runId:string;idempotencyKey:string;requestHash:string;expectedSessionVersion:number;generation:number;permitRef:string};
+type CheckpointManifest={schemaVersion:1;checkpointId:string;sessionId:string;sourceGeneration:number;imageDigest:string;compatibilityId:string;archiveUri:string;sha256:string;byteSize:number;acpResumeProof:string|null}
+```
+
+These records must be validated against versioned ACC/ACP JSON Schema at Worker boundary, mapped to existing Cap'n Web capabilities where human/Gadget RPC is used, and have typed retryable versus UNKNOWN outcome errors. The schema fragments above are drafts; generated final validation and migrations are acceptance requirements.
+
+### Proposed source layout
+
+```text
+packages/agent-runtime/
+  src/{worker,session-runtime-do,directory,dispatch,outbox,journal,recovery,checkpoint}.ts
+  src/supervisor/{server,protocol-driver,process,pty,filesystem,git}.ts
+  src/storage/{schema,migrations}.ts
+  src/__tests__/{state,replay,stale-generation,crash,checkpoint,terminal}.test.ts
+  cloudflare.config.ts (generated wrangler.jsonc)
+  SPECS.md
+  plan.md
+```
+
+### Semantics and concurrency
+
+Execution authority for CLI subprocess sessions. Control Plane Task DO owns task policy and loops; Runtime DO owns session/run/operation states and container generation. Every cross-service dispatch persists intent and returns accepted receipt; true completion via journal. Native Workshop engine does not require container, so runtime must not become authority for existing Overseer chat.
+
+**Destillation/reference:** Grokbot PR#1 sandbox-runtime DO, session generation and terminal/files code; closed Cloudflare OS PR#2 low-level Container API fix; legacy Hub ACP transport. Pin actual source commit and test fixture before copying, and update F-001…F-017 migration evidence. Distinguish existing Workshop capabilities from new target components; no duplicate identity, scheduler, approval or MCP-import framework.
+
+### Acceptance
+
+A change is done only with strict schemas, migrated/verified data shapes, tests for idempotent admission, partial protocol messages, replay and crash/reconciliation, deny-by-default resource grants, source provenance and staging E2E for deployed services. Verify that core Workshop Code Mode and Gatekeeper simulation tests remain green.

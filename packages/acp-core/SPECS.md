@@ -36,3 +36,49 @@ Unit tests cover partial frames, multiple frames, invalid UTF-8, malformed JSON,
 ## Normative protocol contract
 
 Use [ACP_CONTRACTS_V1](../../docs/architecture/ACP_CONTRACTS_V1.md) sections 3, 5 and 6. Export validators for `RuntimeRequest`, `RuntimeResult`, `AgentEvent` and per-harness protocol fixtures. A complete implementation supplies actual JSON schema files, typed discriminated unions, examples, compatibility ranges and negative fixtures; this descriptive package spec alone is not sufficient. The Grok 1.0.50 probe used a version 1 initialize envelope; do not copy Hub's initialize blindly. Distinguish JSON-RPC wire IDs from platform event sequences and ACP session IDs. Test frames crossing chunk boundaries, invalid UTF-8, duplicate outstanding IDs, unknown notifications and cancelled operations with unknown side-effect outcome.
+
+
+## Unified Agent Platform v2 — executable implementation draft (2026-10-13)
+
+**New normative scope:** [Unified Architecture](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input ledger](../../docs/architecture/USER_INPUT_LEDGER.md), [Implementation stages](./plan.md). This section extends the earlier ACP/session-only description to agent definitions, independent Tasks, loop strategies, native Workshop engine parity, pluggable protocol drivers, subagents and tools where relevant. It is an IMPLEMENTATION DRAFT, not deployed code.
+
+### Data path and package dependencies
+
+```mermaid
+flowchart LR
+ CLI[Grok/Codex/OpenCode stdio] --> FRAME[bounded NDJSON decoder]
+ FRAME --> RPC[JSON-RPC state machine]
+ RPC --> NEG[ACP capabilities]
+ NEG --> ADAPT[Harness-specific translator]
+ ADAPT --> ACC[Agent Control Contract events]
+```
+
+### Canonical interfaces and data shapes to implement
+
+```typescript
+type AcpFrame={jsonrpc:'2.0';id?:string|number;method?:string;params?:unknown;result?:unknown;error?:{code:number;message:string;data?:unknown}};
+interface AcpConnection {initialize(request:unknown):Promise<NegotiatedProtocol>;request(method:string,params:unknown,deadlineMs:number):Promise<unknown>;onNotification(cb:(method:string,params:unknown)=>void):void;onServerRequest(cb:(id:string|number,method:string,params:unknown)=>Promise<unknown>):void;cancelPending(reason:string):void}
+```
+
+These records must be validated against versioned ACC/ACP JSON Schema at Worker boundary, mapped to existing Cap'n Web capabilities where human/Gadget RPC is used, and have typed retryable versus UNKNOWN outcome errors. The schema fragments above are drafts; generated final validation and migrations are acceptance requirements.
+
+### Proposed source layout
+
+```text
+packages/acp-core/
+  src/{index,framing,jsonrpc,session,handshake,capabilities,errors}.ts
+  src/__fixtures__/{grok,codex,opencode}/*.jsonl
+  src/__tests__/{framing,negotiation,requests,server-permission,backpressure}.test.ts
+  SPECS.md
+  plan.md
+```
+
+### Semantics and concurrency
+
+ACP is only one driver transport. Keep JSON-RPC over supervisor-controlled stdio; normalize to AgentEventV1 using agent-protocol. Separate native message ID, ACP session ID, platform session ID and canonical run/child ID. Server-initiated session/request_permission is a blocking RPC answered only after the runtime's tool approval policy resolves.
+
+**Destillation/reference:** Hub src/runtime/acp/acp-client.manager.ts; Grokbot services/sandbox-runtime/tools/acp-smoke.mjs and Grok ACP manager. Pin actual source commit and test fixture before copying, and update F-001…F-017 migration evidence. Distinguish existing Workshop capabilities from new target components; no duplicate identity, scheduler, approval or MCP-import framework.
+
+### Acceptance
+
+A change is done only with strict schemas, migrated/verified data shapes, tests for idempotent admission, partial protocol messages, replay and crash/reconciliation, deny-by-default resource grants, source provenance and staging E2E for deployed services. Verify that core Workshop Code Mode and Gatekeeper simulation tests remain green.

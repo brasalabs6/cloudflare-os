@@ -25,3 +25,52 @@ Real Cloudflare sandbox tests must cover initialize/new/prompt/events/cancel, fi
 ## Version-specific executable contract
 
 Canonical shape: [ACP_CONTRACTS_V1](../../docs/architecture/ACP_CONTRACTS_V1.md) §§2–6,10. Production manifest must contain `codexAcPBridgeVersion`, `codexCliVersion`, `bridgeBinarySha256`, `imageDigest`, `initializeRequestSchemaId`, `supportedProtocolRange`, `authStrategy`, `providerRoutes` and `fixtureSha256`. Use `codex-acp` with reviewed Codex App Server compatibility; never expose App Server protocol in Workshop RPC. Require sandbox fixture for native permission requests, tool events, cancellation and `session/load` behavior if supported; unsupported features return typed `UNSUPPORTED_CAPABILITY`. Explicitly record successful unattended, revocable authentication strategy; without that, keep release in CANDIDATE and disallow traffic. Hub's Codex App Server implementation is a reference, not evidence of ACP bridge production readiness.
+
+
+## Unified Agent Platform v2 — executable implementation draft (2026-10-13)
+
+**New normative scope:** [Unified Architecture](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input ledger](../../docs/architecture/USER_INPUT_LEDGER.md), [Implementation stages](./plan.md). This section extends the earlier ACP/session-only description to agent definitions, independent Tasks, loop strategies, native Workshop engine parity, pluggable protocol drivers, subagents and tools where relevant. It is an IMPLEMENTATION DRAFT, not deployed code.
+
+### Data path and package dependencies
+
+```mermaid
+flowchart LR
+ Task[Agent Runtime] --> Choose[Protocol Driver]
+ Choose --> Bridge[codex-acp]
+ Choose --> Native[optional Codex App Server driver]
+ Bridge --> Codex[Codex CLI]
+ Native --> Codex
+ Bridge --> ACC[ACC event normalizer]
+ Native --> ACC
+```
+
+### Canonical interfaces and data shapes to implement
+
+```typescript
+type CodexProfile={schemaVersion:1;codexVersion:string;bridgeVersion:string|null;binarySha256:string;protocolDriver:'codex-acp'|'codex-app-server';authStrategyId:string;modelAlias:string|null};
+type CodexCapabilityMap={supportsModels:boolean;supportsApprovals:boolean;supportsSubagents:boolean;supportsSessionResume:boolean;nativeMethods:string[]}
+```
+
+These records must be validated against versioned ACC/ACP JSON Schema at Worker boundary, mapped to existing Cap'n Web capabilities where human/Gadget RPC is used, and have typed retryable versus UNKNOWN outcome errors. The schema fragments above are drafts; generated final validation and migrations are acceptance requirements.
+
+### Proposed source layout
+
+```text
+packages/agent-harness-codex/
+  src/{index,driver,profile,auth,translation}.ts
+  src/drivers/{acp,app-server}.ts
+  src/__fixtures__/{codex-acp,codex-native}
+  src/__tests__/{negotiation,auth,approvals,events,subagents,cancel}.test.ts
+  SPECS.md
+  plan.md
+```
+
+### Semantics and concurrency
+
+Codex may expose richer native App Server semantics than ACP bridge; both must implement EngineDriver and one ACC event vocabulary. No accidental native protocol leakage into UI. Explicit namespaced protocolExtension provides detailed commands, tools, subagent ancestry and model controls only when supported and authorized.
+
+**Destillation/reference:** Hub src/runtime/acp/acp-client.manager.ts and its Codex App Server integration (behavioral reference); Codex/codex-acp versions to pin and test. Pin actual source commit and test fixture before copying, and update F-001…F-017 migration evidence. Distinguish existing Workshop capabilities from new target components; no duplicate identity, scheduler, approval or MCP-import framework.
+
+### Acceptance
+
+A change is done only with strict schemas, migrated/verified data shapes, tests for idempotent admission, partial protocol messages, replay and crash/reconciliation, deny-by-default resource grants, source provenance and staging E2E for deployed services. Verify that core Workshop Code Mode and Gatekeeper simulation tests remain green.
