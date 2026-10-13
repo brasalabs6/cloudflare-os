@@ -322,6 +322,12 @@ const GATEKEEPER_PREFIX = "gatekeeper-";
 /** Read every deployable package and its Wrangler configuration, sorted by package name. */
 export function readDeployablePackages(packagesDir: string): DeployablePackage[] {
   return readdirSync(packagesDir)
+      // The Grok Container is an experimental Cloudflare image-backed runtime,
+      // not a release-manifest Worker: the customer deployment manifest has no
+      // image build/push or Container lifecycle contract yet. Keep all existing
+      // core customer releases/preview targets unchanged until that integration
+      // is explicitly implemented and tested.
+      .filter((name) => name !== "agent-runtime")
       .filter((name) => {
     try {
       return statSync(join(packagesDir, name, "wrangler.jsonc")).isFile();
@@ -439,6 +445,11 @@ export function buildWorkerEntry(
     bindings.push({ type: "worker_loader", name: loader.binding });
   }
   for (const svc of config.services ?? []) {
+    // Only the opt-in Grok development integration binds this sandbox Worker.
+    // Customer deployment instances cannot provision Cloudflare Container
+    // images from the current release manifest. Never generate an unresolved
+    // `$WORKER_NAME(agent-runtime)` placeholder for an existing instance.
+    if (kind === "backend" && svc.service === "agent-runtime") continue;
     bindings.push({
       type: "service",
       name: svc.binding,
