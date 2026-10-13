@@ -62,3 +62,12 @@ packages/agent-harness-opencode/
 ## Critério final
 
 Compatibilidade com motor nativo Workshop e Gatekeepers existentes; detalhes específicos de ACP/native expostos por extensões tipadas sem quebrar um front-end único. **Sem comprovação de deploy ainda.**
+
+
+## Mandatory existing-module boundary / implementation gate (2026-10-13)
+
+Audit: [EXISTING_MODULE_BOUNDARIES_AUDIT.md](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), governing root SPECS §23. **Owner constraint:** Only OpenCode CLI protocol/config and event mapping. Root-scoped filesystem, command authorization, PTY, environment secrets, session/run storage are Runtime/Computer/Egress responsibilities; native subagent information is not automatically a controllable platform child.
+
+**Before beginning tasks in this package:** Capture pinned OpenCode ACP negotiation fixtures and verify tool permission/cancel/resume, model/mode and subagent events against ACC; test isolated HOME/config and provider egress.
+
+The directory is DOC_ONLY until package.json, actual source, schema tests and correct Worker configuration are added. No new runtime is implemented by the spec revision. Every relevant plan item requires source→target evidence, typed contract checks, approval/identity threat tests and real worker E2E when applicable.

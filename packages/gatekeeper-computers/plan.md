@@ -66,3 +66,12 @@ packages/gatekeeper-computers/
 ## Critério final
 
 Compatibilidade com motor nativo Workshop e Gatekeepers existentes; detalhes específicos de ACP/native expostos por extensões tipadas sem quebrar um front-end único. **Sem comprovação de deploy ainda.**
+
+
+## Mandatory existing-module boundary / implementation gate (2026-10-13)
+
+Audit: [EXISTING_MODULE_BOUNDARIES_AUDIT.md](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), governing root SPECS §23. **Owner constraint:** A scoped capability to physical CLI sandbox Computer/PTY/files only. It MUST NOT obtain native Gadget/executeCode authority or silently derive shell access from CodingAgent, ACP request_permission or Worktree. All reads go through observation authorization, all side effects through submit/apply action.
+
+**Before beginning tasks in this package:** Before implementation, review Computer handle capability types under Gatekeeper guide; distinguish human PTY grant, scoped command grant, file root read and Git status; test single-use generation-bound tickets, symlink escapes and denied commands.
+
+The directory is DOC_ONLY until package.json, actual source, schema tests and correct Worker configuration are added. No new runtime is implemented by the spec revision. Every relevant plan item requires source→target evidence, typed contract checks, approval/identity threat tests and real worker E2E when applicable.
