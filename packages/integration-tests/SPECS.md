@@ -104,3 +104,23 @@ The harness's assumptions about backend config, generated main paths and Gatekee
 - [ ] Config patches are test-only and bounded.
 - [ ] New Gatekeeper patterns can reuse the common harness.
 - [ ] Cross-package contract changes gain a regression scenario here where useful.
+
+## 14. Shared Worker harness and real agent sessions
+
+The harness starts and stops the actual configured Workers and Durable Objects used by integration tests, with RPC clients, predictable input bindings, network interception and mock-model support. Setup MUST have explicit teardown to prevent leaked running Workers or callbacks. Tests must not silently fall back to a production Gatekeeper or use live production OAuth secrets. Agent session helpers SHOULD expose observable state/history and acceptance semantics closely enough for downstream workshop-evals to verify real agent changes, including post-accept reload.
+
+```mermaid
+stateDiagram-v2
+ [*] --> Configuring
+ Configuring --> Booting: validate worker bindings / fixtures
+ Booting --> Ready: Workerd startup and RPC handshake succeed
+ Ready --> Running: invoke test session
+ Running --> Verifying: collect RPC state + history
+ Verifying --> Ready: next test after cleanup
+ Verifying --> TearingDown: last test or failure
+ Booting --> TearingDown: startup error
+ Running --> TearingDown: abort / timeout
+ TearingDown --> Stopped: all workers confirmed stopped
+```
+
+Test-case isolation must reset Durable Object state where required; assertions must not rely on an unready socket or stale capability stub. Package-level and Worker tests are different suites, and generated entrypoints may require prep steps. The experimental evaluation package consumes this harness but owns model selection, budgets and scoring. Cover startup failure, worker restarts, cleanup after exception, mock model divergence, RPC retry boundaries and egress restrictions.

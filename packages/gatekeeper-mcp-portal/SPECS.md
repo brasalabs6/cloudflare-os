@@ -148,3 +148,21 @@ Tests SHOULD cover:
 ## 13. Change rules
 
 The portal MUST remain a separate connector from generic MCP unless a future architecture can preserve these distinct trust and endpoint-provenance rules without mode confusion. Any proposal for cross-server grants, portal-wide authority or collaborator sharing requires a root security-spec update and adversarial tests.
+
+## 14. Deployment trust changes and endpoint repoint state
+
+MCP Portal target and trust settings are deployment authority, unlike generic user-supplied MCP server configuration. A portal connection can be repointed only when the new endpoint is the currently approved deployment target; a server or credential change MUST invalidate the old connection generation, facets, cached catalog policy and staged actions before reconnecting. The portal's vetted annotation mode MUST remain revocable immediately without needing a user to disconnect first. A write is auto-approvable only when the shared mcp-shared classification permits it AND an explicit user auto-rule applies; staged submission always happens.
+
+```mermaid
+stateDiagram-v2
+ [*] --> Unconfigured
+ Unconfigured --> Connectable: admin configures portal
+ Connectable --> Connected: user completes nonce-bound handoff
+ Connected --> NeedsReconnect: endpoint/auth policy changed
+ NeedsReconnect --> Connected: new deployment target and credentials verified
+ NeedsReconnect --> Disabled: portal removed or disabled
+ Connected --> Disabled: admin disables portal
+ Connected --> NeedsReconnect: credential expired
+```
+
+All upstream tools remain constrained by the selected portal-server resource scope. Retiring trust MUST prevent auto-application to already-pending but newly disallowed actions. Failed portal introspection is not permission to fall back to a generic unvetted endpoint. Tests MUST exercise trust withdrawal without reconnect, old-generation in-flight completion, endpoint repoint, per-server scoping, expired auth and simulated action outcomes.

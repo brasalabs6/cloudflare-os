@@ -167,3 +167,22 @@ This package does not provide:
 - [ ] Consumer migration responsibility remains explicit.
 - [ ] Performance remains bounded for expected collection sizes.
 - [ ] Package and affected consumer tests/specs are updated.
+
+## 14. Migration ownership and transactional invariants
+
+Typed storage provides a type-safe facade over DurableObjectStorage.kv, not an automatic migration/versioning engine. Changing a TypeScript schema declaration cannot rewrite records already persisted under an old shape. Consumers MUST explicitly implement backward-compatible readers or ordered migrations, and document the migration as an application-level change. Unique and nonunique indexes must remain synchronized with collection record mutations within the intended transactional boundary. A failed transaction must not expose partially committed index rows or counters as authoritative state.
+
+```mermaid
+stateDiagram-v2
+ [*] --> Unopened
+ Unopened --> Loading: open collection / singleton
+ Loading --> Ready: state and index handles initialized
+ Ready --> Transaction: begin durable update
+ Transaction --> Ready: committed record + indexes
+ Transaction --> RolledBack: failure before commit
+ RolledBack --> Ready: retry after reevaluation
+ Ready --> MigrationNeeded: older stored record shape detected
+ MigrationNeeded --> Ready: consumer-managed compatible conversion
+```
+
+Do not store RPC capabilities or secrets as plain JSON simply because a typed collection accepts the TypeScript type. A subscription callback does not replace durable storage and must be invalidated on reconnect or DO restart. Tests cover concurrent transactions, unique index conflicts, partial writes, reverse index lookup, versionless old-record reads, multiple collections and restart persistence.

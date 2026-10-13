@@ -145,3 +145,26 @@ Tests SHOULD cover:
 ## 14. Change rules
 
 Do not model schedule registration as an immediate side effect or ordinary Gatekeeper action without a deliberate architecture revision. New schedule types must fit the normalized `ScheduleSpec`/driver model, define durable occurrence semantics, preserve hook approval and update agent-facing types/tests/specs together.
+
+## 15. Durable occurrence delivery and management UX
+
+The scheduler uses approved persistent hooks, not a normal mutating Gatekeeper action. The current management SPA may list scheduled registrations, but no management control can secretly bypass `bindHook` and `enable`. Schedule normalization MUST distinguish elapsed intervals, calendar rules (with explicit timezone) and one-shot instants, preserving occurrence limits and rejecting recurrence options for one-shot schedules. A schedule controller is scoped to the originating workspace, while the account driver stores activation indexes and a shared alarm; revocation must disable all matching live activations.
+
+```mermaid
+stateDiagram-v2
+ [*] --> Proposed
+ Proposed --> Bound: normalized schedule + callback stored
+ Bound --> Enabled: Workshop approves hook and calls enable
+ Bound --> Rejected: user declines
+ Enabled --> Due: alarm reaches next occurrence
+ Due --> Dispatching: fresh session and observation authorization
+ Dispatching --> Enabled: recurring callback ACK; compute next occurrence
+ Dispatching --> Complete: one-shot callback ACK
+ Dispatching --> Retry: delivery failed; durable retry decision
+ Retry --> Enabled: retry handled without duplicate callback
+ Enabled --> Disabled: disable / revoke
+ Complete --> [*]
+ Disabled --> [*]
+```
+
+Every delivered callback must use a fresh HookInitiator session rather than stale stored RPC stubs. Protect against alarm duplication, stale schedule generations, timezone/DST transitions and concurrent disable during dispatch. Tests SHOULD include restart and forced alarm retry, normalization bounds, list authorization, idempotent enable/disable, and no post-revoke invocation.

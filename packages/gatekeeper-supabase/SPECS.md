@@ -105,7 +105,7 @@ When independent access cannot be proven, sharing MUST fail closed or the observ
 
 ## 12. Build/configuration
 
-Worker entrypoint: `src/supabase.ts`. Project/organization configurators are generated through the shared Gatekeeper configurator pipeline. Structured observability uses `backend-utils`.
+Worker entrypoint: `src/supabase.ts`. Project/organization configurators are generated through the shared Gatekeeper configurator pipeline. Structured observability uses `@gadgets/observability`.
 
 `CLIENT_ID` and `CLIENT_SECRET` are deployment secrets/dev vars; the root dev launcher may inject the shared Supabase credentials into generated dev config.
 
@@ -127,3 +127,23 @@ Tests SHOULD cover:
 ## 14. Change rules
 
 Any relaxation of `query()` restrictions or addition of a SQL/provider mutation is a security-sensitive architectural change. It requires server-side enforcement design, action/revert/auto-approval analysis, adversarial tests and this spec update. A regex-only rule is never sufficient as the sole enforcement for SQL safety.
+
+## 14. Explicit read/query versus approved execute
+
+Supabase project connections may provide schemas/table discovery and two classes of SQL execution. `query()` is read-only by contract and MUST enforce that constraint defensively instead of relying on a syntactic guess or provider permission alone. `execute()` is a mutation path that MUST stage the complete SQL operation for human approval before remote execution. Selecting a Supabase project/branch/schema does not grant arbitrary unrelated project access. A query result is a protected observation and requires observation authorization and observer eligibility before returning rows, metadata or sensitive errors.
+
+```mermaid
+flowchart TD
+ A[Resolve Supabase instance/project grant] --> B{Requested SQL path}
+ B -- query --> C[Validate read-only SQL + DB permissions]
+ C --> D[Run read-only query, bound output]
+ D --> E[Authorize observation before disclosure]
+ B -- execute --> F[Validate scope and describe exact SQL]
+ F --> G[Stage durable action and submit approval]
+ G --> H{Approved?}
+ H -- No --> I[Reject; do not execute]
+ H -- Yes --> J[Apply mutation and capture provider outcome]
+ J --> K[Reconcile ambiguous result before any replay]
+```
+
+Do not log SQL arguments, connection strings, service keys or row payloads. SQL operations that can have side effects via functions/CTEs/other grammar must not be classified as ordinary read merely because they start with SELECT. Tests must cover multi-statement injection, transaction behavior, schema isolation, rejected/unknown outcome, query limits, credential renewals and verifier denials.

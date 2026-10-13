@@ -314,3 +314,47 @@ A frontend change is complete when:
 - [ ] critical interactions are accessible/responsive;
 - [ ] tests and this spec reflect new workflows;
 - [ ] backend/shared specs are updated for cross-package contract changes.
+
+
+## 27. Current UI contract: handoff, editor history, models, and shared primitives
+
+These requirements describe UI features added since the original spec. A browser route or React state is not an independent source of access, user identity or approvals.
+
+### 27.1 Connection/handoff lifecycle
+The /connect/handoff page is a Workshop-origin redemption page, not the provider OAuth callback. Its URL fragment carries a ticket; redeem using the flow nonce and initiating Workshop session, then erase the fragment. A provider popup alone MUST NOT mark the account connected. Frontend MUST wait for Workshop's successful initial connect or exact-stage reconnect commit. Account subscriber state is re-derived from backend RPC; React components MUST dispose obsolete RpcStubs during auth/rpc resets. Share secrets and handoff fragments MUST NOT enter pageLocation error telemetry or UI logs.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Disconnected
+  Disconnected --> Opening: user requests connect / OAuth
+  Opening --> ProviderPending: provider popup starts
+  ProviderPending --> Handoff: gatekeeper returns one-time Workshop ticket
+  Handoff --> Verified: redeem with original session and nonce
+  Handoff --> Error: missing nonce / expired ticket / wrong session
+  Verified --> Connected: backend account update observed
+  Error --> Disconnected: retry from new start
+  Connected --> Reconnecting: refresh permissions / credential expiry
+  Reconnecting --> Connected: exact staged restore committed
+  Reconnecting --> Connected: uncommitted stage discarded; old grant unchanged
+```
+
+### 27.2 Composer and chat change UX
+Chat composer, attachments, model selector, code-change notices, change conflict dialogs and Blueprint proposal/update affordances must compose through the shared RPC session. Local optimistic content MUST be visibly provisional until an authoritative change batch is accepted. Worktrees are chat-private code objects and cannot be shown as ordinary public/shared Gadgets. Explicit acceptance of merged Blueprint code MUST retain local modifications or present an unresolved conflict, never silently discard an edit. A user's draft/attachment identity MUST survive UI rerender where safe, but unuploaded binary bytes MUST NOT be included in telemetry or model context without user action.
+
+```mermaid
+flowchart LR
+  A[Compose prompt / attachment] --> B[RPC agent turn]
+  B --> C[Stream messages and provisional code changes]
+  C --> D{User accepts?}
+  D -- Reject --> E[Keep chat narrative; discard provisional head effect]
+  D -- Accept --> F{Merge conflicts?}
+  F -- Yes --> G[Resolve conflict in dialog]
+  G --> F
+  F -- No --> H[Commit accepted head and reload Gadget]
+```
+
+### 27.3 Shared UI and admin settings
+New shared components live in @gadgets/ui, including controlled HierarchicalList tree/select/rename/drag interactions; domain-specific persistence and permission checks remain in the consuming screen. Model provider/gateway administration is authenticated server-side; form validation and tests are convenience, not authority. Public auth availability follows deployment config, which cannot be rewritten from the admin models panel. Reduced motion, touch accessibility, keyboard focus restoration after popup/context-menu closure, error boundaries and reconnect UX are required for affected screens.
+
+### 27.4 Verification
+Test ConnectHandoffPage, AuthContext/RpcContext replacement, stale stub disposal, account subscriptions, admin model gateway form validation, attachments, accepting Blueprint merges with conflicts, mobile touch drag, keyboard focus, sensitive-data reporting and restricted approval notices. Do not test only a static render of state transitions.

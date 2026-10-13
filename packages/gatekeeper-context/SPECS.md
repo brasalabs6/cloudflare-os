@@ -117,3 +117,27 @@ Tests SHOULD cover:
 ## 13. Change rules
 
 New Context write APIs, public-sharing modes, skill execution semantics or storage ownership classes are architectural changes. They require root/pacakge spec updates, explicit policy/observer treatment, storage migration design, sandbox API review and integration tests in the same PR.
+
+## 14. Skill collections, navigator and synchronization
+
+The current management application includes a hierarchical skill navigator with create, rename, move, delete, upload and collection editing. Private collections are account-owned; public collections are domain-scoped/admin-managed. Any operation involving a collection or Git-backed artifact MUST check the actor's management authority, domain and expected data revision on the server. A drag/drop or rename gesture in the shared UI is only a proposed mutation; visual state cannot override storage ownership.
+
+A skill manifest is a literal `SKILL.md` with YAML frontmatter. `name` uses lowercase letters, numbers and single internal hyphens (at most 64 characters); `description` is nonempty and at most 1024 characters. Invalid YAML, absent frontmatter or ambiguous rename must fail rather than silently create a malformed skill. The agent catalog includes collection entries first and at most 150 skill entries; excess skills remain discoverable through the session list/search and the truncation signal. Slash commands carry explicit originating collection/path context, not privileged instructions. Skill text and documents are untrusted content; loading them MUST NOT elevate them to system-policy authority.
+
+### Management and read flow
+
+```mermaid
+flowchart TD
+ A[User opens Context management UI] --> B[Verify account, admin role and sharing domain]
+ B --> C{Mutation or read?}
+ C -- Mutation --> D[Validate collection, skill metadata and ownership]
+ D --> E{Valid authorized change?}
+ E -- No --> F[Reject; keep existing durable records]
+ E -- Yes --> G[Commit collection / Git artifact changes]
+ G --> H[Refresh navigator and catalog]
+ C -- Agent read --> I[Resolve enabled collection + skill ID]
+ I --> J[Authorize protected observation and observer access]
+ J --> K[Return bounded document as untrusted text]
+```
+
+Collection/skill Git sync MUST preserve existing content when import/update fails, never cross sharing domains or delete public collections on private-account revocation. Tests MUST include upload/frontmatter parsing, rename preserving unrelated YAML, move/cycle guards, tree deletion, Git-backed synchronization, catalog cap/truncation, role/domain access and observer refusal. See src/agent-skill.ts and app/skills/.

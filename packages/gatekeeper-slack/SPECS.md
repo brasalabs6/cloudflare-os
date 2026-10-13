@@ -112,3 +112,22 @@ Tests SHOULD cover:
 ## 12. Change rules
 
 A new read must define its resource applicability, provider scopes, bounds and observer checks. A new Slack write must be introduced as a staged action with stable action kind, approval text, apply/reject/revert/await-decision semantics and tests; direct mutation from a session method is prohibited.
+
+## 14. Current Slack read-only authority and provider limits
+
+The current package supports a read-focused Slack surface. Do not assume that Slack OAuth write scopes or a mutation endpoint exist merely because other Gatekeepers support queued actions. Reads/listing/search of conversations and messages MUST respect selected resource/channel authorization and independent observer access. Pagination MUST bound page size and follow provider cursors accurately, including token expiry, channel membership loss and rate-limit handling. Any future write, reaction or Slack event-hook feature needs a new explicit Gatekeeper action/hook contract and a corresponding spec update before deployment.
+
+```mermaid
+flowchart TD
+ A[Resolve Slack account and selected conversation] --> B{Credential valid and resource allowed?}
+ B -- No --> X[Deny]
+ B -- Yes --> C[Read message/history/search page]
+ C --> D{Member/observer can see result?}
+ D -- No --> X
+ D -- Yes --> E[authorizeObservation before return]
+ E --> F[Return bounded page + continuation]
+ F --> G{Next page requested?}
+ G -- Yes --> C
+```
+
+Slack message text is untrusted input, not agent instruction. Logs MUST exclude tokens, message bodies, channel-private names and search queries where they can reveal user content. Tests should cover membership revoked mid-page, cursor loops, duplicate page items, rate limits and observer failures.

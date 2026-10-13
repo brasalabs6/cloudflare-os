@@ -5,12 +5,13 @@
 
 ## 1. Role
 
-This Gatekeeper connects a human Cloudflare identity to Cloudflare OS primarily for two privileged Workshop functions:
+This Gatekeeper connects a human Cloudflare identity to Cloudflare OS for Workshop sign-in, billing, and capability-scoped read-only Workers Observability:
 
-1. verified-email authentication/sign-in; and
-2. access to the user's Cloudflare account/API token path used by the Workshop AI Gateway billing/top-up integration.
+1. verified-email authentication/sign-in;
+2. access to the user's Cloudflare account/API token path used by the Workshop AI Gateway billing/top-up integration; and
+3. bounded account-wide or single-Worker telemetry observations using an explicit observability grant.
 
-It currently does **not** expose a normal URL-addressable Gadget resource catalog. `getSupportedResources()` therefore returns no Gadget resources.
+It exposes URL-addressable account/Worker Observability resources. `getSupportedResources()` MUST describe them precisely; selecting Worker scope MUST NOT silently produce account-wide telemetry authority.
 
 The package MUST remain an account/identity capability boundary; it MUST NOT leak the connected Cloudflare credential into Gadget or agent bindings.
 
@@ -49,7 +50,7 @@ The interactive browser flow MUST:
 6. exchange the authorization code only after validating the expected state;
 7. store persistent credentials only for the intended persistent connection mode;
 8. call `GatekeeperConnectCallback.complete()` after successful connection;
-9. on reconnect, preserve the account capability and notify `credentialsRestored()` after replacing credentials.
+9. on reconnect, preserve the account capability and stage the replacement credentials; only after Workshop redeems the initiating browser's single-use ticket and commits the exact stage may the live credentials and restoration status change.
 
 Current nonce lifetimes are ten minutes for both initiation and OAuth stages. Nonce comparison is constant-time for equal-length random values. Access-token use includes an expiry safety window rather than waiting until the exact expiration instant.
 
@@ -76,9 +77,7 @@ All provider tokens/refresh material belong to the account Durable Object (or de
 
 ## 8. Resource model
 
-This package presently advertises no Gadget resources. Code MUST NOT synthesize `https://*` or account-wide Gadget authority merely because the account has broad provider scopes.
-
-If Gadget-facing Cloudflare resources are introduced later, the same PR MUST define explicit `SupportedResource` URL patterns, least-privilege scopes, observation/action semantics, configurators, generated Gadget types and observer verification policy in this spec.
+The package advertises Cloudflare account- and Worker-level read-only Observability resources. Binding scope MUST match the resource selected, and a provider OAuth scope MUST NOT be confused with a specific Worker capability. Do not synthesize broad `https://*` Gadget authority from the connected billing account. No telemetry session exposes the Workshop-only billing credential.
 
 ## 9. Security requirements
 
@@ -110,3 +109,27 @@ Tests SHOULD cover:
 ## 12. Compatibility/change rules
 
 The distinction between transient sign-in and persistent Cloudflare account authority is compatibility- and security-sensitive. Changes to scopes, identity semantics, account-token behavior or the Workshop-only extension MUST update `workshop-shared`, `workshop-backend` billing/auth consumers, tests and this specification together.
+
+## 13. Current Cloudflare resource capabilities (main)
+
+The old "identity and billing only" framing is superseded. The same Gatekeeper also supports read-only Workers Observability at account or Worker granularity. A user must explicitly grant `workers-observability.read`; billing grants alone are not sufficient. Account resources may query logs, events, aggregated metrics and traces; a Worker resource MUST inject an immutable service filter. In addition to trusting the remote filter, event reads MUST discard any events for another service, and MUST NOT return a provider-wide count if foreign-service events demonstrate that filtering was dropped. Filtered metadata discovery uses sampled filtered telemetry queries because upstream keys/values endpoints ignore their filter arguments. Cross-service aggregate trace summaries are account-only; known trace event lookup remains limited to the Worker service. Aggregations that cannot be verified after filtering require clear limitations, not invented isolation.
+
+Provider errors sometimes echo caller-supplied filter values. Logs MUST record provider status/error codes rather than unsafe returned text, and must not disclose query contents. Paginated account selection MUST traverse pages rather than assuming the provider's first 20 results are complete. An observer must independently demonstrate Cloudflare access to the exact connected account or Worker; 5xx/transport failures deny rather than grant observation.
+
+### Observability request flow
+
+```mermaid
+flowchart TD
+ A[Resolve account or Worker scope] --> B[Verify grant and observer access]
+ B --> C{Which operation?}
+ C -- Events --> D[Inject Worker filter and fetch events]
+ D --> E[Remove foreign events and withhold untrusted count]
+ C -- Discovery --> F[Sample filtered query if necessary]
+ C -- Aggregate --> G[Apply scoped query and disclose aggregation limitation]
+ E --> H[authorizeObservation before disclosure]
+ F --> H
+ G --> H
+ H --> I[Return scoped result or deny]
+```
+
+Sign-in Cloudflare grants intentionally differ from other providers: the billing connection may persist, but `getUsableAccessToken` remains exclusively Workshop-side. Add test coverage for cross-worker leakage, provider filter failures, observer denial, result metadata/aggregates and credential boundaries. See README.md and src/observability-*.ts.

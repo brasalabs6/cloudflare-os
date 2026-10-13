@@ -102,3 +102,23 @@ Tests SHOULD cover:
 ## 13. Change rules
 
 New Spotify writes require stable action kinds, approval text, resource validation, simulation/await-decision/revert decisions and tests. Broadening playlist scope or exposing new private account datasets is an explicit security contract change and requires this spec update.
+
+## 14. Account/playlist scoping and provider effect semantics
+
+Spotify resources must keep account-owned access separate from selected playlist authority; a playlist grant MUST NOT make the whole user's library writable. Search, tracks, playlist metadata and saved-item observations require access checking and authorization before return. Playlist edits and other provider mutations are queued actions with exact identity, target playlist and human-visible track/order changes. Where the provider exposes snapshot/version semantics, a proposed edit MUST verify whether the playlist changed before apply. Simulated playlist state is provisional and must not be reported as an already-committed Spotify response.
+
+```mermaid
+stateDiagram-v2
+ [*] --> Scoped
+ Scoped --> Observed: fetch and authorize playlist / music data
+ Observed --> Scoped: return protected result
+ Scoped --> Staged: propose playlist change
+ Staged --> Rejected: approval refused
+ Staged --> Applying: approval granted
+ Applying --> Scoped: remote update confirmed
+ Applying --> Conflict: playlist snapshot drift
+ Conflict --> Staged: recompute description / approval
+ Applying --> Unknown: response lost; reconcile before reapply
+```
+
+OAuth refresh/reconnect uses generation-fenced, staged handoff. Observer access must use independent account rights for protected playlists. Tests cover playlist revisions, pagination, ordering, login expiry, staged rejection, unknown outcome and token nondisclosure.

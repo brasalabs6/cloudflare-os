@@ -115,3 +115,26 @@ Cross-package behavior SHOULD use `@gadgets/integration-tests` where practical.
 ## 12. Change rules
 
 Adding a new Confluence resource type or mutation requires, in the same change: `SupportedResource` definition, concrete URL/scoping logic, OAuth-scope review, configurator support if user-selectable, Gadget TypeScript API, observation/action policy, observer semantics, tests and this spec update.
+
+## 13. Approval, document scope and current connect handshake
+
+Confluence page/space access MUST be scoped to the canonical resource granted, not the connected account's entire Atlassian token. Every document or content-list result requires observation authorization before it leaves the Gatekeeper; observer verification tests the collaborator's independent provider access to the same information. Comments and content edits are staged actions, with complete human-readable before/after descriptions, and must never execute merely because a simulation shows them. Concurrent edits should be checked against provider version or expected revision to avoid overwriting unrelated updates.
+
+OAuth completion now uses the Workshop browser handoff: the Gatekeeper stages the resulting credential, Workshop issues a session/nonce-bound single-use ticket and a reconnect remains escrowed until commitReconnect of the exact stage. Refresh rotation is serialized. Failure during ticket redemption must not install new authority by itself.
+
+```mermaid
+stateDiagram-v2
+ [*] --> Unconnected
+ Unconnected --> PendingProvider: initiate nonce and PKCE
+ PendingProvider --> HandoffPending: stage provider grant
+ HandoffPending --> Connected: Workshop redeems ticket
+ HandoffPending --> Unconnected: invalid or expired ticket
+ Connected --> ActionStaged: propose page/comment edit
+ ActionStaged --> Connected: approval denied
+ ActionStaged --> Applying: approval given
+ Applying --> Connected: confirmed provider update
+ Applying --> NeedsReconcile: provider outcome unknown
+ Connected --> Revoked: user revokes
+```
+
+Tests must cover resource URL canonicalization, anonymous/forged observer accounts, OAuth replay, ambiguous write result, stale content version, approval rejection and content cache invalidation.

@@ -10,6 +10,7 @@ import { useDocumentTitle } from './useDocumentTitle'
 import { useConnectionLost } from './RpcContext'
 import OAuthButtons from './components/auth/OAuthButtons'
 import SiteLogo from './components/SiteLogo'
+import { deviceSessionSearch } from './features/native-app/DeviceSessionHandoff'
 
 
 interface LoginPageProps {
@@ -63,7 +64,7 @@ export default function LoginPage({ rpcStub, onLoginSuccess }: LoginPageProps) {
       return (
         <div
           role="alert"
-          className="min-h-screen flex flex-col items-center justify-center gap-4 bg-kumo-base px-4"
+          className="flex h-full min-h-0 flex-col items-center justify-center gap-4 overflow-y-auto bg-kumo-base px-4 py-8"
         >
           <p className="text-sm text-kumo-danger text-center">
             Couldn&apos;t load deployment settings.
@@ -73,7 +74,7 @@ export default function LoginPage({ rpcStub, onLoginSuccess }: LoginPageProps) {
       )
     }
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-kumo-base px-4">
+      <div className="flex h-full min-h-0 flex-col items-center justify-center gap-4 overflow-y-auto bg-kumo-base px-4 py-8">
         <Loader size="lg" />
         <p className="text-sm text-kumo-subtle text-center">
           {connectionLost ? "Can't reach the server. Retrying…" : 'Loading…'}
@@ -86,7 +87,7 @@ export default function LoginPage({ rpcStub, onLoginSuccess }: LoginPageProps) {
   const passwordAuthEnabled = serverConfig.passwordAuthEnabled
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-kumo-base px-4 relative overflow-hidden">
+    <div className="relative flex h-full min-h-0 flex-col items-center justify-start overflow-y-auto bg-kumo-base px-4 py-8">
       {/* Dot grid — fades from top to bottom */}
       <div
         className="absolute inset-0 pointer-events-none"
@@ -98,7 +99,7 @@ export default function LoginPage({ rpcStub, onLoginSuccess }: LoginPageProps) {
         }}
       />
 
-      <div className="w-full max-w-sm relative">
+      <div className="relative my-auto w-full max-w-sm">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <SiteLogo size={40} className="mb-3">
@@ -115,6 +116,7 @@ export default function LoginPage({ rpcStub, onLoginSuccess }: LoginPageProps) {
             {/* Username / password form */}
             <form onSubmit={handleSubmit} className="space-y-4">
               <Input
+                className="w-full"
                 label="Username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -125,6 +127,7 @@ export default function LoginPage({ rpcStub, onLoginSuccess }: LoginPageProps) {
               />
 
               <Input
+                className="w-full"
                 type="password"
                 label="Password"
                 value={password}
@@ -151,7 +154,11 @@ export default function LoginPage({ rpcStub, onLoginSuccess }: LoginPageProps) {
 
             <p className="text-center text-sm text-kumo-subtle mt-6">
               Don't have an account?{' '}
-              <Link to="/signup" className="text-kumo-brand hover:underline font-medium">
+              <Link
+                to="/signup"
+                search={deviceSessionSearch(window.location.search)}
+                className="text-kumo-brand hover:underline font-medium"
+              >
                 Create one
               </Link>
             </p>

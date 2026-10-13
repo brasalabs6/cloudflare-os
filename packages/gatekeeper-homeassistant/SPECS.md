@@ -134,3 +134,23 @@ Tests SHOULD cover:
 ## 14. Change rules
 
 A new Home Assistant resource granularity or service action requires explicit scope resolution, configurator/type updates, approval/simulation/revert semantics, observer policy and tests. Broadening the authority of an existing synthetic resource is a breaking security change and MUST be treated as such.
+
+## 15. Device-action safety and reconnect boundaries
+
+The Home Assistant instance URL and credential are a coupled grant; reconnect MUST NOT allow an attacker to replace the URL with an arbitrary endpoint. Provider responses containing entity/device/area or labels are protected observations and must pass the observer policy. State-changing service calls must be fully described and staged before any remote mutation. A purely local simulation is not proof that the physical device changed. Simulated pending state and a confirmed service result MUST remain distinct. Revert can be offered only if a safe inverse is implemented and the current device state has been revalidated.
+
+```mermaid
+flowchart TD
+ A[Resolve HA instance + entity/area/device grant] --> B{Canonical target in scope?}
+ B -- No --> X[Deny]
+ B -- Yes --> C{Read or service call?}
+ C -- Read --> D[Fetch state and authorize observation]
+ C -- Service call --> E[Validate and stage intended effect]
+ E --> F[Return provisional state overlay]
+ F --> G{Human approval?}
+ G -- No --> H[Discard provisional action]
+ G -- Yes --> I[Recheck target and apply action]
+ I --> J[Persist outcome, invalidate stale state cache]
+```
+
+Instance URL validation MUST block credential forwarding to private or redirected third-party destinations outside the explicit configured Home Assistant authority. Test target scoping, service-parameter validation, reconnect nonce and origin, rejected/unknown action outcomes, provider unavailability and simulated-vs-real state.

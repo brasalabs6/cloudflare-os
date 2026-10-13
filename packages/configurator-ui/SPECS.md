@@ -105,3 +105,22 @@ This package does not own OAuth, account connection, resource authorization, per
 - [ ] No primitive requires ambient parent-window privilege.
 - [ ] `resourceUrl()` semantics remain deterministic and scope-safe.
 - [ ] Build tooling/tests and affected package specs are updated.
+
+## 12. Current sandboxed configurator interaction flow
+
+A configurator module runs inside an allow-scripts sandboxed iframe and owns its ephemeral form state. The host provides a narrow RPC capability and trusted UI primitives; the iframe must not obtain Workshop administrative authority, another account's credentials, or the parent page DOM. The typed spec provides initial state, optional initialValuesFromResourceUrl, optional isReady, resourceUrl and synchronous render. A returned resource URL is a proposed canonical resource identity and MUST be validated again by the Gatekeeper/Workshop before capability minting.
+
+```mermaid
+stateDiagram-v2
+ [*] --> Loading
+ Loading --> Initialized: receive initial state and limited RPC
+ Initialized --> Editing: user changes form selection
+ Editing --> Invalid: isReady false / invalid resource
+ Invalid --> Editing: correct form
+ Editing --> Ready: resourceUrl is canonical and isReady
+ Ready --> Submitted: host requests URL
+ Submitted --> Closed: host validates and binds
+ Submitted --> Editing: host denies invalid or unauthorized resource
+```
+
+CheckboxList serializes selected comma-separated strings, so option values containing commas MUST be encoded safely or rejected. Distinguish display-only metadata from account-proven resource scope. Tests should cover malformed iframes, spoofed host messages, render exceptions, selection roundtrip and abandoned flow cleanup.

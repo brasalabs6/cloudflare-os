@@ -149,7 +149,7 @@ Contract:
 
 `ObservationDescription` may include:
 
-- `prohibitAllSharing` — the observed information may never be exposed to anyone except the owner; Workshop enforces the resulting restricted workspace policy;
+- `ownerInvitesOnly` — the observed information may never be exposed to anyone except the owner; Workshop enforces the resulting restricted workspace policy;
 - `excludeObservers` — named observer IDs must not see this observation; authorization succeeds only if Overseer can enforce that exclusion.
 
 These are security signals, not presentation hints.
@@ -328,3 +328,45 @@ Integration tests MUST catch backend/Gatekeeper/frontend compile/runtime incompa
 - [ ] Persisted/status/action-tag compatibility is addressed.
 - [ ] Security invariants have negative tests.
 - [ ] Root and affected package specs are updated.
+
+
+## 24. New public ABI and security-state contracts
+
+### 24.1 Connection completion contract
+GatekeeperConnectCallback.complete() and reconnectComplete(stageId) yield a ConnectHandoff for the initiating browser. A returned handoff is NOT proof that credentials have become live. GatekeeperUser.commitReconnect(stageId) activates the exact staged grant only after Workshop validates and consumes the handoff ticket. The account MUST pin identity/generation and reject stale stage IDs. PublicApi and AuthenticatedApi expose the corresponding start/confirm methods; these values are bearer capabilities and must be handled as such. New RPC members MUST include doc comments on every exported type, member, const and function.
+
+```mermaid
+stateDiagram-v2
+  [*] --> New
+  New --> Staged: Gatekeeper callback completion
+  Staged --> Active: Workshop consumes nonce-bound ticket
+  Staged --> Expired: expired/replayed ticket
+  Active --> ReconnectStaged: newer credentials obtained
+  ReconnectStaged --> Active: commitReconnect exact stage
+  ReconnectStaged --> Active: invalid stage refused without changing grant
+  Active --> Revoked: account revocation
+```
+
+### 24.2 ObservationDescription flags
+The canonical flag for restricted data is containsRestrictedData. It causes manual action review and prevents public-web fetch for affected Gadget contexts; ownerInvitesOnly independently stops bearer share links/delegation and retains owner-direct invitations. These MUST NOT be conflated with old 'prohibit all sharing' terminology. Exclusion of individual observers uses the shared authorizer's explicit exclusion information. Authenticated observers are verified against actual provider content, not just 'same service connected'. ActionDescription.descriptionIsComplete MUST be surfaced to human approvers when false; unsafe/incomplete Git pushes are refused by the kernel.
+
+### 24.3 Git workpieces and Blueprint ABI
+Public workpieces distinguish Gadget and chat-private worktree records. Worktree summaries may carry baseCommit, headCommit, pinBase, title, id and chatId; these summaries are not a Gadget runtime capability. Changes to code paths are modeled as file changes and Git commit pins, not as a single mutable source blob. Blueprint release metadata includes a commitId that points to a validated release pack, and its lineage marks are meaningful for three-way merges and switching upstream sources. New API producers/consumers MUST use the shared schema rather than duplicating an almost-equivalent interface.
+
+```mermaid
+flowchart TD
+  A[Receive public RPC invocation] --> B{Authenticated and scoped?}
+  B -- No --> Z[Reject]
+  B -- Yes --> C{Reads external data?}
+  C -- Yes --> D[Gatekeeper authorizeObservation]
+  D --> E{Authorized including observers?}
+  E -- No --> Z
+  E -- Yes --> F[Return bounded result]
+  C -- No --> G{External side effect?}
+  G -- Yes --> H[Submit action / hook approval]
+  H --> I[Apply only after permission decision]
+  G -- No --> F
+```
+
+### 24.4 Constraints for API evolution
+Changing RPC signatures, enum discriminators, promise pipelining, wire serialization, auth/passphrase hashing constants, workpiece IDs, action status names, hook controller lifecycle, or Blueprint commit metadata is a compatibility migration. Provide cross-package typechecked consumers, regression tests and an explicit rollout/backward-compatibility decision. Gatekeeper-client code MUST NOT reinterpret approval or sharing status on its own.

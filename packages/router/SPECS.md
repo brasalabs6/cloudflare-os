@@ -110,3 +110,24 @@ Tests SHOULD cover:
 - [ ] New backend public paths are covered in backend/router specs and tests.
 - [ ] Email continues to fail closed when uninstalled.
 - [ ] Dev and production wiring derive equivalent routes.
+
+## 14. Current origin and email routing
+
+The router's authority comes from deployment bindings and public-origin config, not application text or a client-selected Worker. Gatekeeper paths derive the target from the installed GATEKEEPER_* service bindings. The router MUST never interpret a missing Gatekeeper binding as permission to forward arbitrary user-provided URLs. /api and Blueprint screenshot requests reach Workshop backend; remaining paths serve installed frontend assets or the explicit development fallback. Email ingress has a distinct Worker event route: with no GATEKEEPER_EMAIL binding it fails closed.
+
+```mermaid
+flowchart TD
+ A[Incoming request/event] --> B{Email event?}
+ B -- Yes --> C{GATEKEEPER_EMAIL present?}
+ C -- No --> X[Reject]
+ C -- Yes --> D[Forward to Email Worker]
+ B -- No --> E{Path begins /gatekeeper/<binding>?}
+ E -- Yes --> F[Resolve exact installed binding or reject]
+ E -- No --> G{/api or screenshot path?}
+ G -- Yes --> H[Workshop backend]
+ G -- No --> I{ASSETS configured?}
+ I -- Yes --> J[Static frontend assets]
+ I -- No --> K[Documented development backend fallback]
+```
+
+Proxying must preserve required methods and WebSocket upgrades but avoid treating untrusted headers as proof of authentication. Tests MUST cover unknown/malformed Gatekeeper suffix, conflicting route prefixes, Email absence, API WebSocket handshake, assets fallback and provider OAuth callback routes.

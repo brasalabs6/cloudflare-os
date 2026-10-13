@@ -60,9 +60,9 @@ Normalization/report creation SHOULD be total over malformed input: invalid data
 
 A reporting failure MUST NOT change the result of the user operation that triggered the report.
 
-## 7. Relationship to `backend-utils`
+## 7. Relationship to `@gadgets/observability`
 
-`backend-utils/error-reporting` is the Worker-side delivery bridge. This package owns the neutral event shape/normalization; `backend-utils` owns best-effort forwarding through deployment bindings.
+`@gadgets/observability/error-reporting` is the Worker-side delivery bridge. This package owns the neutral event shape/normalization; `@gadgets/observability` owns best-effort forwarding through deployment bindings.
 
 The two packages MUST evolve together when the wire/event contract changes.
 
@@ -90,4 +90,20 @@ Application audit data and error telemetry are distinct contracts and MUST remai
 - [ ] New fields are bounded and low-risk.
 - [ ] Browser data remains explicitly untrusted.
 - [ ] No authorization/business logic consumes diagnostic assertions as truth.
-- [ ] `backend-utils` compatibility/tests are updated for wire changes.
+- [ ] `@gadgets/observability` compatibility/tests are updated for wire changes.
+
+## 11. Current reporting infrastructure
+
+The Worker reporter is now `@gadgets/observability/error-reporting` rather than the retired `backend-utils/error-reporting` path. This package owns bounded serializable error event definitions and normalization; transport uses the optional ERROR_REPORTER binding. Client-originated reportedUserId is unverified and MUST NOT drive authentication, quota or authorization. `pageLocation` is reconstructed from origin and pathname only, not by truncating full href: query and fragment may contain bearer secrets. Gatekeeper management iframe errors are forwarded to the trusted Workshop host, which verifies source window and sandbox origin `null`, before reporting.
+
+```mermaid
+flowchart TD
+ A[Trusted surface catches error] --> B[Normalize allowed bounded event fields]
+ B --> C[Remove secrets and fragment/query]
+ C --> D{Reporter bound and origin validated?}
+ D -- No --> E[No-op]
+ D -- Yes --> F[Best-effort private delivery]
+ F --> G[Structured diagnostic storage]
+```
+
+Never automatically capture user Gadget exceptions as first-party security telemetry without explicit trust partitioning. Test overflow, malformed exceptions, fake user IDs, iframe source spoofing, absent binding and errors on the reporting path.

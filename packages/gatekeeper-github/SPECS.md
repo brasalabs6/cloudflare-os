@@ -121,3 +121,30 @@ Tests SHOULD cover:
 ## 13. Change rules
 
 A new GitHub method that reads protected data requires observation authorization and scope tests. A new mutation requires a stable action kind, approval description, resource-scope validation, simulation/await-decision decision, revert truthfulness, generated type update, tests and this spec update.
+
+## 14. Git transport and signed webhook delivery
+
+The current GitHub resource interface also offers worktree Git pull, queued Git push and optional repository event hooks. A repository, issue, or pull-request scope MUST gate Git operations and provider actions according to its actual allowed resource. A Git push is a Gatekeeper action, subject to approval and uncertain-outcome reconciliation, never a side effect of the read-only pull path.
+
+A hook becomes live only after Workshop approves the bound callback and `enable()` registers a GitHub webhook. Registration requires repository admin permission and a configured `WEBHOOK_ORIGIN`. Each account's hooks for one repository share a signed webhook. Verify the webhook signature BEFORE parsing/delivering protected payload. Dedupe delivery IDs; ignore already-processed or over-age events; obtain a new authorized hook session for each delivery. Disable the webhook when its last hook is removed. On revocation, try provider cleanup; never discard the token needed for a pending cleanup while falsely claiming revocation succeeded.
+
+### Webhook lifecycle
+
+```mermaid
+stateDiagram-v2
+ [*] --> Bound
+ Bound --> PendingApproval: bindHook
+ PendingApproval --> Enabled: user approves and enable
+ PendingApproval --> Rejected: user rejects
+ Enabled --> Delivering: signed fresh event received
+ Delivering --> Enabled: observation authorized and ACK
+ Delivering --> Retrying: callback failure
+ Retrying --> Enabled: bounded redelivery succeeds
+ Retrying --> Exhausted: retry budget exhausted
+ Enabled --> Repairing: hourly remote webhook check
+ Repairing --> Enabled: restore URL/events/TLS/secret
+ Enabled --> Disabled: last hook disabled
+ Disabled --> [*]
+```
+
+The periodic checker repairs removed or modified webhooks, reconciles missed failed deliveries in a bounded window, and uses per-account rate bounds; provider events acknowledged at another receiver may be unrecoverable. Tests MUST include forged signatures, duplicate IDs, unexpected 3xx, reconnect generations, admin permission loss, webhook failure/recovery, Git action rejection and observer checks. Refer to README.md and src/github-hooks.ts / github-webhook-events.ts.

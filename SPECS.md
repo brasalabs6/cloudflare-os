@@ -41,44 +41,22 @@ The system MUST preserve this separation. External-service credentials and privi
 
 ## 3. Workspace/package topology
 
-The pnpm workspace is `packages/*`. The current package set is:
+Cloudflare OS is a pnpm workspace. The following is the complete set of packages present in main at architecture-alignment time. Only packages with a Wrangler deployment configuration are deployable Workers; a gatekeeper-* name alone does not make a package deployable.
 
-### Core runtime and UI
+| Domain | Packages | Authority |
+| --- | --- | --- |
+| Kernel | workshop-backend, workshop-shared | Durable identities, workspaces, RPC, approvals, capability ABI |
+| First-party presentation | workshop-frontend, ui, configurator-ui | React shell, reusable hierarchical controls, sandboxed configuration UI ABI; never grants independent authority |
+| Ingress/routing | router | Binding-discovered Gatekeeper proxy, backend API, assets and mail handling |
+| Reusable integration primitives | gatekeeper-kit, mcp-shared | Provider-neutral nonce, credentials, actions, observations, MCP tool and OAuth trust boundaries; neither is a standalone Worker |
+| Data/telemetry | typed-storage, observability, error-reporting | DO collection/index helpers, Worker logging/metrics/tracing and bounded error event schema |
+| Blueprint/template library | bundled-blueprints | Reviewed Docs/Sheets/Slides formats and build-time client/server gadget libraries |
+| Verification | integration-tests, workshop-evals | Real Worker/RPC harness and model+agent functional evaluations |
+| External Gatekeepers | gatekeeper-cloudflare, gatekeeper-confluence, gatekeeper-context, gatekeeper-email, gatekeeper-github, gatekeeper-gitlab, gatekeeper-google, gatekeeper-homeassistant, gatekeeper-linear, gatekeeper-mcp, gatekeeper-mcp-portal, gatekeeper-notion, gatekeeper-scheduler, gatekeeper-slack, gatekeeper-spotify, gatekeeper-supabase, gatekeeper-x, gatekeeper-zoominfo | Scope-limited provider capabilities, durable connector accounts/facets, observations, approved actions and hooks |
 
-- `workshop-backend` — durable kernel, RPC API, users, workspaces, agents, sharing, approvals, blueprints, admin and billing coordination.
-- `workshop-frontend` — React shell, routing, authentication UX, WebSocket RPC lifecycle and management UI.
-- `router` — public-origin routing to backend, gatekeepers, frontend assets and Email ingress.
-- `workshop-shared` — cross-runtime TypeScript/RPC contracts and global limits/helpers.
+This inventory contains 32 packages. The old backend-utils package has been retired: Worker telemetry/context integrations now live under @gadgets/observability and error shapes under @gadgets/error-reporting.
 
-### Shared infrastructure
-
-- `backend-utils` — structured logging, observability context and non-fatal error reporting bridge.
-- `error-reporting` — vendor-neutral bounded error event schema and frontend event normalization.
-- `typed-storage` — typed synchronous Durable Object storage abstraction with collections, indexes and singletons.
-- `configurator-ui` — sandboxed resource-configurator module contract and runtime-provided UI primitives.
-- `mcp-shared` — shared MCP connection, OAuth, scoping, tool classification, sessions, action storage and generated types.
-- `integration-tests` — reusable real-Worker test harness.
-
-### Gatekeepers
-
-- `gatekeeper-cloudflare`
-- `gatekeeper-confluence`
-- `gatekeeper-context`
-- `gatekeeper-email`
-- `gatekeeper-github`
-- `gatekeeper-google`
-- `gatekeeper-homeassistant`
-- `gatekeeper-linear`
-- `gatekeeper-mcp`
-- `gatekeeper-mcp-portal`
-- `gatekeeper-notion`
-- `gatekeeper-scheduler`
-- `gatekeeper-slack`
-- `gatekeeper-spotify`
-- `gatekeeper-supabase`
-- `gatekeeper-zoominfo`
-
-No package may introduce a second, conflicting definition of a shared system contract that belongs in `workshop-shared`.
+Each package has its own packages/<name>/SPECS.md. New packages MUST be added to this inventory and receive a package spec in the same behavior-changing PR. Shared API changes MUST first be represented in workshop-shared; provider-specific implementations cannot fork global security contracts.
 
 ## 4. Core runtime architecture
 
@@ -173,7 +151,7 @@ The Gatekeeper MUST call `ObservationAuthorizer.authorizeObservation()` for ever
 
 A Gatekeeper MUST fail closed when observer authorization cannot be proven.
 
-`ObservationDescription.prohibitAllSharing` is a strong policy signal: once such data is observed, sharing is prohibited and the workspace enters the restricted behavior enforced by the Overseer.
+ObservationDescription.containsRestrictedData enters restricted mode (manual approvals; no public-web fetches); ownerInvitesOnly separately forbids share links and delegated access. Both remain subject to observer verification.
 
 ### 5.5 Actions and human approval
 
@@ -234,7 +212,7 @@ Workspace sharing is a permission graph managed by the Overseer.
 - Revocation is intentionally lazy: edges/records may remain, but an unreachable collaborator MUST be denied on every `open()`.
 - Revoked share links MUST not grant reachability.
 - A user MUST NOT grant a role higher than their own effective role.
-- `prohibitAllSharing` is a higher-level policy enforced by the Overseer and applies beyond the sharing table itself.
+- `ownerInvitesOnly` is the owner-direct-invite sharing constraint enforced by the Overseer; `containsRestrictedData` independently requires restricted-data controls.
 
 ## 7. Agent and chat execution model
 
@@ -249,15 +227,32 @@ AI chat is durable workspace state coordinated by the Overseer.
 - Model-facing assistant state may be stored server-side for faithful replay/compaction, but private model metadata MUST NOT leak to clients.
 - Chat compaction checkpoints are immutable replay accelerators, not a replacement source of truth for pending registry state.
 
-## 8. Blueprints and outputs
+## 8. Blueprints, Git releases and outputs
 
-Blueprints are portable descriptions/content for constructing Gadgets/workspaces.
+A Blueprint is portable source code, not a transferable privileged capability. Metadata is indexed in Workshop/User storage and public BLUEPRINTS KV; durable release content is stored in BLUEPRINT_CONTENT R2 as a validated Git pack. A Blueprint version is a release commit, identified by BlueprintMetadata.commitId, not simply an unversioned compressed archive. The backend's workspace Git store retains content-addressed Git blobs, trees and commits; Gadget records refer to commits. Existing pre-Git Blueprint content is read through the documented legacy snapshot-compatibility path rather than treated as newly authored history.
 
-- Blueprint metadata/content storage is split between metadata-oriented KV and content-oriented R2 in the backend deployment.
-- Package/runtime code MUST sanitize/validate blueprint metadata before exposing or instantiating it.
-- Binding assignments from a blueprint MUST resolve through explicit user/account/model selection; a blueprint cannot smuggle privileged live capabilities.
-- Output format metadata is descriptive and does not grant authority.
-- Screenshot/media endpoints MUST set bounded known content types and immutable caching only for immutable content keys.
+A release pack MUST validate object hashes, types, complete release tree, ancestor graph, bounds and file/path formats before it is imported into a workspace. An attacker-supplied pack MUST NOT inject arbitrary credentials or assume privileges. Release history contains explicit lineage and a release-merge marker so ordinary chat merge parents cannot be mistaken for published versions. Publishing unchanged code without newly merged releases MUST NOT mint redundant releases. Importing or instantiating a blueprint never binds another author's connected account: every binding is resolved against the receiving user's own account/resource choices.
+
+Bundled Blueprints are generated by @gadgets/bundled-blueprints and installed on a deployment's first /api traffic. Their snapshot releases use deterministic parentless Git commits; the same files yield the same release hash in every deployment. Installed formats are subsequently curated by admin policy. A Gadget following a Blueprint may explicitly accept an update through a three-way merge that preserves its own edits and surfaces conflicts; it MUST NOT silently replace a user's code when an upstream release changes.
+
+```mermaid
+flowchart TD
+  A[Blueprint source / gadget code] --> B[Create Git release commit and validated pack]
+  B --> C[Store R2 pack and KV metadata]
+  C --> D[Explore / public Blueprint metadata]
+  D --> E[User chooses instantiation and own bindings]
+  E --> F[New Gadget follows release commit]
+  F --> G{New upstream release?}
+  G -- No --> H[Keep local head]
+  G -- Yes --> I[Three-way merge using known common release]
+  I --> J{Conflicts?}
+  J -- Yes --> K[Present conflicts; require explicit resolution]
+  J -- No --> L[Offer reviewed apply/accept]
+  K --> L
+  L --> M[Advance Gadget commit while retaining provenance]
+```
+
+Outputs are listings/projections, not a source of authorization. Media endpoints MUST validate content types and enforce bounded body sizes/caching keyed to immutable content. See docs/blueprints.md, packages/workshop-backend/SPECS.md and packages/bundled-blueprints/SPECS.md.
 
 ## 9. Ambient accounts and management apps
 
@@ -302,13 +297,11 @@ Current contract limitations:
 
 ## 12. Observability and error reporting
 
-Backend logs SHOULD be structured and carry stable component/event metadata.
+Worker logging, tracing, ambient request context and metrics MUST use @gadgets/observability public subpaths. @gadgets/error-reporting defines the bounded sanitized error-event schema. The former backend-utils package is not present. Structured loggers SHOULD carry stable component and vendorId fields; never log OAuth tokens, prompts, model responses, user content, private URLs, secret headers or bearer share fragments.
 
-`backend-utils` AsyncLocalStorage context is request/activation-local. It MUST be re-established at RPC, alarm, hook, queue or restart boundaries; context is not assumed to cross them automatically.
+AsyncLocalStorage context is scoped to the current async invocation and MUST be re-established at RPC, alarm, hook, queue or restart boundaries. Browser, iframe and Gatekeeper errors are diagnostics, not authenticated identity or approval evidence. A sandboxed Gatekeeper iframe MUST report through its Workshop host with appropriate source-window checks, not direct privileged telemetry from an untrusted context.
 
-Error reporting is best-effort and MUST NOT break the primary request. Browser error telemetry is untrusted diagnostic input and MUST NOT become authorization or business logic.
-
-Error payloads MUST remain bounded and normalized before crossing service boundaries.
+Optional ERROR_REPORTER and METRICS bindings MUST degrade to no-op when absent. METRICS events have one canonical actor-index record and optional secondary per-owner/workspace lookup records; analytics MUST count the canonical event once, never sum lookup replicas. Backend agent tracing emits per-invocation spans for invoke_agent, chat, execute_tool and tool_approval, with token counts but no prompt/tool payloads. Span lifetimes MUST NOT be represented as spanning unrelated Durable Object invocations.
 
 ## 13. Security invariants
 
@@ -395,7 +388,7 @@ A breaking change MUST include migration/compatibility handling or an explicit c
 - `workshop-shared` MUST remain runtime-neutral enough to be consumed by backend, frontend and Gatekeepers without importing privileged kernel implementation.
 - Gatekeepers SHOULD depend on `workshop-shared` contracts and shared infrastructure, not on `workshop-backend` internals.
 - `mcp-shared` owns MCP policy/common transport; the two MCP Gatekeepers add connector-specific endpoint/provisioning behavior.
-- `backend-utils` and `error-reporting` MUST remain best-effort infrastructure and MUST NOT acquire business authority.
+- `@gadgets/observability` and `error-reporting` MUST remain best-effort infrastructure and MUST NOT acquire business authority.
 - `configurator-ui` MUST remain a narrow sandbox ABI.
 - `typed-storage` MUST remain storage infrastructure; application-specific schema semantics belong to consuming packages.
 - `integration-tests` may know how to boot packages but MUST NOT become a production dependency.
@@ -419,3 +412,75 @@ A change touching architecture is complete only when all applicable items are tr
 ## 20. Package specifications
 
 Every package under `packages/` MUST contain a `SPECS.md`. Those documents describe the package mission, ownership boundary, exported surface, state, workflows, security requirements, configuration, tests, known limitations and change rules. When a new package is created, its spec is part of the package's minimum viable implementation.
+
+## 21. Current-state change controls and cross-module flows
+
+This chapter documents behavior introduced after the PR's original August 2026 baseline. The sections above remain normative subject to the current contracts here; duplicate or contradictory older descriptions MUST be reconciled, not implemented independently.
+
+### 21.1 Browser connection is a staged, nonce-bound capability transfer
+
+A Gatekeeper callback is not permission for whichever browser possesses a URL to activate a connected account. Workshop owns a one-time ticket plus per-flow nonce redeemed from the initiating session at /connect/handoff. An initial connect remains staged and a reconnect's new credentials remain in escrow until the exact Workshop commitReconnect(stageId) call. Handoff tickets are stored hashed, expire, are single-use and MUST NOT be sent in HTTP query strings, logs or analytics.
+
+```mermaid
+sequenceDiagram
+  participant B as Initiating browser
+  participant W as Workshop user/login DO
+  participant G as Gatekeeper account DO
+  participant P as OAuth provider
+  B->>W: Start connect: origin-bound flow nonce
+  W-->>B: Connect URL and local nonce
+  B->>G: Start provider authorization
+  G->>P: OAuth with state / PKCE
+  P-->>G: Callback with code and state
+  G->>G: Claim nonce; stage credential/connection generation
+  G->>W: complete or reconnectComplete
+  W-->>G: Short-lived one-time handoff ticket
+  G-->>B: Redirect to trusted Workshop /connect/handoff#ticket
+  B->>W: Redeem ticket with initiating session and flow nonce
+  W->>G: Commit exact reconnect stage (when applicable)
+  W-->>B: Confirm account linked or signed in
+```
+
+### 21.2 Sensitive observations and sharing
+
+ObservationDescription.containsRestrictedData causes restricted mode: no public-web fetches and no action auto-approval; manual approval remains possible, with any incomplete action description visibly flagged. Git pushes with incomplete descriptions are refused. ownerInvitesOnly is a separate sharing restriction: only owner-direct collaborator invitations survive, while link-based/delegated reachability is removed. They are NOT synonyms. Existing observers and new collaborators require Gatekeeper verification and any explicit observer exclusions must be enforced before disclosure.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Normal
+  Normal --> VerifiedRead: authorizeObservation succeeds
+  VerifiedRead --> Restricted: containsRestrictedData
+  VerifiedRead --> OwnerInvites: ownerInvitesOnly
+  OwnerInvites --> RestrictedInvites: containsRestrictedData
+  Restricted --> RestrictedInvites: ownerInvitesOnly
+  Normal --> Denied: authorization failed
+  Restricted --> Denied: forbidden public fetch / unsafe auto action
+  OwnerInvites --> Denied: share link or delegated grant
+  RestrictedInvites --> Denied: unsafe disclosure or unverified invitee
+```
+
+### 21.3 Chat, Git worktrees and Blueprint updates
+
+Workspace Git state is content-addressed. Chat-private worktrees are first-class workpieces with a base commit, lazy file overlay and pending head advancements; they are NOT Gadgets and are NOT published/shared as Gadgets. Their head and pin advance through accepted changes, preserving chat history. Replaying rejected/abandoned provisional changes must not materialize approved workspace state. An upstream Blueprint release can be proposed and merged explicitly; unresolved file conflicts require a user/agent resolution before acceptance.
+
+```mermaid
+flowchart TD
+  A[Agent turn with explicit bound capabilities] --> B[Read worktree / gadget Git base]
+  B --> C[Propose file changes and provisional commits]
+  C --> D[Append durable chat change events]
+  D --> E{User accepts?}
+  E -- No --> F[Keep provisional or discard; no committed head advance]
+  E -- Yes --> G[Validate against current head and merge base]
+  G --> H{Conflicts?}
+  H -- Yes --> I[Review/resolve merge conflicts]
+  I --> G
+  H -- No --> J[Advance accepted head and rebuild UI]
+```
+
+### 21.4 Mandatory verification across boundaries
+
+Changes touching identity, token/stage state, public RPC, sharing/restricted data, action queues, Git histories, Blueprint packs or agent sandboxing require package-local tests plus appropriate Worker integration and security adversarial tests. The evaluation suite (workshop-evals) measures real agent tasks with restricted model egress and functional verifiers; a successful natural-language model response is not proof that a task passed. Production credentials MUST NOT be exposed to test fixtures or written into sources. The root instructions AGENTS.md and review security bar in REVIEW.md remain implementation guidance but do not override the explicit runtime authority of this specification.
+
+## 22. Coverage inventory and maintenance
+
+Each directory under packages/ has one SPECS.md. When creating or removing a package, update this inventory; remove specs belonging to deleted packages rather than leaving orphan documents. Current package specs cover all 32 modules, including bundled-blueprints, gitlab, gatekeeper-kit, x, observability, ui and workshop-evals. New security-sensitive features MUST document: entrypoints, authorities, persistent record ownership, user-visible success/failure paths, state transitions, replay/race defenses, required tests and deployment configuration. A Mermaid diagram is a design aid, not an independent substitute for those prose invariants.

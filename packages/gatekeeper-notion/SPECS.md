@@ -124,3 +124,23 @@ Tests SHOULD cover:
 ## 13. Change rules
 
 Any new Notion mutation requires a complete stored-action design, approval description, simulation/await-decision decision, revert truthfulness, cache coherence, generated API update and tests. Any broadening of item-resource descendants must be explicitly specified rather than inferred from provider convenience.
+
+## 13. Block/page state and consent boundaries
+
+Notion sessions must preserve the exact granted page/database scope and any nested-block restrictions, not substitute a broad account capability because the user's integration token technically permits it. Rendering page or block content is a protected observation, including metadata and child-page traversal. A write to a page, database property or block must be staged with a precise human-readable description, then applied through the Gatekeeper approval queue; staged state MAY be projected into subsequent reads but must not be represented as provider-confirmed state. Lists must be page-bounded, avoid disclosure beyond the grant and handle deleted/archived resources as explicit failures rather than reusing stale cache content.
+
+```mermaid
+stateDiagram-v2
+ [*] --> GrantResolved
+ GrantResolved --> Observing: read page / blocks
+ Observing --> GrantResolved: authorized response
+ Observing --> Denied: scope or observer rejection
+ GrantResolved --> Proposed: stage create/update/archive
+ Proposed --> Rejected: human rejects
+ Proposed --> Applying: human approves
+ Applying --> GrantResolved: provider confirms effect
+ Applying --> UnknownOutcome: provider response lost
+ UnknownOutcome --> GrantResolved: verified reconciliation
+```
+
+OAuth or interactive connect completion must use the nonce/session-bound Workshop handoff, including stage-only reconnect. Tests must cover deep block pagination, scope mismatch, observer verifier behavior, action rejection, ambiguous updates, concurrent page revisions and provider transient errors.

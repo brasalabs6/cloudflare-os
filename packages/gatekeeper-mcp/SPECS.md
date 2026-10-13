@@ -127,3 +127,24 @@ Tests SHOULD cover:
 ## 13. Change rules
 
 Do not add connector-local interpretations of MCP annotations, OAuth, tool scopes or action-state behavior. Those belong in `mcp-shared` so generic MCP and MCP Portal remain consistent. Any proposal to make BYO MCP shareable or annotation-auto-approvable is a security architecture change requiring root spec revision, a verifiable policy design and adversarial tests.
+
+## 14. Current shared MCP search and staged lifecycle
+
+User-supplied MCP endpoints are never 'vetted' solely because their server advertises annotations. Reads are classified only by `annotations.readOnlyHint === true` and still require observation authorization. Every other tool is an action; it MUST stage an action record, submit a human description and execute only on approved apply. The current shared search normalizes case, dashes, underscores and camelCase, with 200-character queries and up to 20 results, without expanding the granted tool set. Catalog refresh must not allow tool name reuse/annotation edits to silently bypass the granted revision.
+
+```mermaid
+flowchart TD
+ A[Connected endpoint with pinned identity] --> B[Search or invoke scoped tool]
+ B --> C{Search only?}
+ C -- Yes --> D[Bounded tool summaries; no authority granted]
+ C -- No --> E[Validate tool grant + current catalog revision]
+ E --> F{readOnlyHint explicitly true?}
+ F -- Yes --> G[Execute read, authorize observation]
+ F -- No --> H[Stage action and submit approval]
+ H --> I{Approved?}
+ I -- No --> J[Store rejected]
+ I -- Yes --> K[Claim applying state, invoke remote]
+ K --> L[Store applied / failed / unknown result]
+```
+
+SSRF, redirect and endpoint pinning apply to OAuth discovery as well as tool fetch. A reconnect for generic MCP MUST preserve the chosen endpoint identity. Missing observer record access proof means collaboration is refused. Tests MUST include untrusted server metadata, action-description Markdown spoofing, catalog drift, stale OAuth attempt, endpoint redirect and duplicate application.

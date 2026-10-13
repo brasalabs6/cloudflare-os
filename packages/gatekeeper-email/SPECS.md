@@ -118,3 +118,26 @@ Tests SHOULD cover:
 ## 12. Change rules
 
 Changes to mailbox syntax, message normalization, routing keys, hook persistence or acknowledgement semantics are compatibility-sensitive because they affect deployed addresses and at-least-once delivery. They require migration/backward-compatibility analysis, tests and this spec update.
+
+## 13. Ingress replay/acknowledgment and security transitions
+
+Mail ingress is not trusted just because the platform invokes a Worker handler. The router forwards mail only to the installed Email binding; when absent it fails closed. Ingress MUST validate the configured mailbox/resource/hook activation, bound message size and supported MIME before conversion. Delivery identifiers and processed-event storage MUST avoid dispatching a second user-visible hook callback when the mail platform retries. Unknown transport or callback outcomes require a durable retry/dedupe decision rather than executing an unapproved new callback.
+
+```mermaid
+stateDiagram-v2
+ [*] --> Received
+ Received --> Rejected: unsupported recipient / size / MIME
+ Received --> Classified: validated receiver + message ID
+ Classified --> Duplicate: already delivered
+ Classified --> PendingDelivery: active approved hook
+ PendingDelivery --> Observing: fresh callback session
+ Observing --> Delivered: authorized observation + callback ACK
+ Observing --> Retrying: transient callback failure
+ Retrying --> Observing: bounded retry
+ Retrying --> Exhausted: retry budget exceeded
+ Delivered --> [*]
+ Duplicate --> [*]
+ Rejected --> [*]
+```
+
+A bound hook is not enabled until Workshop approves activation. If disabled or revoked, future deliveries MUST stop without treating the old callback as ambient access. Keep raw MIME, authentication headers, addresses and attachments out of logs. Test duplicate messages, missing Email binding, mail exceeding limits, disabled hook, callback timeout, malformed MIME and replay after restart.

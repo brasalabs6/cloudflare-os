@@ -185,3 +185,22 @@ Tests SHOULD cover:
 ## 16. Change rules
 
 Any change to annotation trust, endpoint equality, action retry semantics, OAuth credential handling or sharing affects both MCP Gatekeepers and is security-sensitive. It MUST update `gatekeeper-mcp`, `gatekeeper-mcp-portal`, tests and relevant root specs in the same change.
+
+## 16. Shared bounded tool search and discovery
+
+The shared `src/tool-search.ts` is the single implementation for matching both a fully loaded catalog and paginated endpoint discoveries. Queries use normalized camelCase, snake_case, dashes and whitespace, and a tool matches when every unique normalized query term occurs in the combined name/title/description. Query text is bounded to 200 characters; searchable provider fields are bounded to 4000 characters; at most 20 tool summaries are returned by one search. An empty query MUST not match everything. A cursor-based server scan MUST use the same predicate as an in-memory search so the same query does not return contradictory results by code path.
+
+```mermaid
+flowchart TD
+ A[Agent tool query] --> B[Clamp and normalize query]
+ B --> C{Nonempty terms?}
+ C -- No --> D[Empty result]
+ C -- Yes --> E[Get tools from catalog or bounded endpoint pages]
+ E --> F[Normalize bounded name/title/description]
+ F --> G{All terms match?}
+ G -- Yes --> H[Return summary, up to 20]
+ G -- No --> I[Continue scan within budget]
+ H --> I
+```
+
+Search results advertise tools, not authority to execute them. Invocation MUST still pass the existing pinned scope, live annotation classification, action staging and observation authorization. Tests MUST check case, word separators, long malicious descriptions, query truncation, empty query, endpoint pagination and identical cross-connector matches.

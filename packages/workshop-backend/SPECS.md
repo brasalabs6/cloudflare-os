@@ -5,7 +5,7 @@
 
 ## 1. Mission
 
-`workshop-backend` is the durable kernel of Cloudflare OS. It authenticates users, owns per-user and per-workspace durable state, brokers all Gatekeeper capabilities, executes/coordinatess sandboxed Gadgets and AI agent turns, enforces observation/action/sharing policy, manages Blueprints/outputs and exposes the Cap'n Web API consumed by the Workshop frontend.
+`workshop-backend` is the durable kernel of Cloudflare OS. It authenticates users, owns per-user and per-workspace durable state, brokers all Gatekeeper capabilities, executes/coordinates sandboxed Gadgets and AI agent turns, enforces observation/action/sharing policy, manages Blueprints/outputs and exposes the Cap'n Web API consumed by the Workshop frontend.
 
 The backend MUST remain the authority for security-sensitive state. Frontend state, agent prompts and iframe UI are never substitutes for backend enforcement.
 
@@ -271,14 +271,10 @@ When a Gatekeeper calls `authorizeObservation()` the backend enforces:
 
 - current workspace owner/collaborator role;
 - observer exclusions/verifier results;
-- `prohibitAllSharing` policy;
+- `containsRestrictedData` restricted-action/public-fetch policy and independent `ownerInvitesOnly` share-link/delegation policy;
 - relevant audit/action history semantics.
 
-If `prohibitAllSharing` applies:
-
-- an already-shared workspace must block the sensitive observation;
-- future sharing is prohibited;
-- the workspace policy restricts subsequent actions/communication as implemented by Overseer to prevent exfiltration.
+When `containsRestrictedData` applies, the affected context enters restricted mode: block public-web fetches, require manual action approval and flag incomplete action descriptions; refuse incomplete Git pushes. When `ownerInvitesOnly` applies, only owner-direct invitations remain usable, with share links and delegated reachability disabled. These flags are independent; currently admitted observers must still pass verification. Do not treat restricted data as automatic blanket sharing prohibition.
 
 Gatekeeper provider code is responsible for calling the authorizer on every read; Overseer is responsible for enforcing the call when received.
 
@@ -400,7 +396,7 @@ Agent/Gadget web-fetch capability is a high-risk outbound network boundary.
 - URL validation/formatting MUST preserve blocking of private-network/origin-bypass SSRF.
 - Dev behavior allowing localhost is not evidence that production should.
 - Fetched content is untrusted agent input and must be bounded/formatted before model exposure.
-- `prohibitAllSharing`/workspace policy restrictions may further block outbound actions to prevent data exfiltration.
+- `containsRestrictedData` prevents public-web fetches and requires manual approval for outbound actions; `ownerInvitesOnly` restricts share-link/delegated visibility independently.
 
 ## 26. Browser/PDF export
 
@@ -505,3 +501,53 @@ A kernel change is complete only when:
 - [ ] frontend/shared/Gatekeeper ABI changes are coordinated;
 - [ ] tests cover success and fail-closed paths;
 - [ ] root and affected package specs are updated.
+
+
+## 34. Post-August kernel contracts: Git, connect handoff, notifications, and restricted mode
+
+The original sections above define the persistent capability kernel; this section specifies the newer code paths introduced in main. Any reference to an unversioned Blueprint archive is now subordinate to the commit/pack release format in docs/blueprints.md. Worker telemetry integrates through @gadgets/observability, not the removed backend-utils package.
+
+### 34.1 Code as immutable Git objects
+A workspace Overseer stores canonical content-addressed SHA-1/zlib Git objects in its durable gitObjects collection. Gadget mainline content is addressed by a commit. The object store is intentionally refless: gadget records, chat pins and Blueprint release metadata are the controlling references, rather than Git refs, HEAD, or a global index. Object identity and pack validation MUST be verified at all ingestion boundaries. Each code edit builds objects before changing the authoritative workpiece head so a failed write cannot leave a dangling committed head.
+
+Chat-private worktrees are workpieces of type worktree, not Gadget facets: they have a base commit and lazily materialized touched-file overlay. Their head/pin is bound to the originating chat for their full lifetime, and worktree state MUST NOT appear to collaborators in ordinary workpiece subscriptions. Only acceptance advances authoritative code; abandon/reroot/rollback MUST reconcile chat log, pending records and commit ancestry. Two-parent merge commits are not automatically Blueprint releases: explicit release-merge headers identify published lineage.
+
+```mermaid
+stateDiagram-v2
+  [*] --> AcceptedHead
+  AcceptedHead --> SessionOverlay: agent reads/edits paths lazily
+  SessionOverlay --> PendingCommit: append worktree/Gadget commit event to chat
+  PendingCommit --> AcceptedHead: reject or cancel; do not advance mainline
+  PendingCommit --> Conflict: accept finds divergent base
+  Conflict --> PendingCommit: resolve code conflicts
+  PendingCommit --> AdvancedHead: validate and accept
+  AdvancedHead --> SessionOverlay: next agent turn
+```
+
+### 34.2 Connect and sign-in capability transfer
+Auth/vendor enablement is deployment-only configuration: AUTH_GATEKEEPERS and DISABLE_PASSWORD_AUTH MUST remain environmental, not mutable AdminConfig. Gatekeeper-backed login accepts verified provider email; sign-in is not automatically a persistent account connection. Connect, reconnect and sign-in callbacks stage a two-minute, hashed, one-time Workshop handoff ticket; the browser must redeem it with the initiating session's nonce. Staged reconnect credentials become live ONLY after the exact GatekeeperUser.commitReconnect(stageId) invoked by Workshop. A callback URL by itself never grants account authority. See src/connect-handoff.ts and docs/connect-handoff.md.
+
+```mermaid
+flowchart TD
+  A[Initiating session creates nonce] --> B[Gatekeeper OAuth / provider flow]
+  B --> C[Stage account or reconnect credentials]
+  C --> D[Workshop mints one-time ticket]
+  D --> E[Trusted /connect/handoff route]
+  E --> F{Initiating session and nonce match?}
+  F -- No --> G[Reject; staged credential never activated]
+  F -- Yes --> H[Consume ticket exactly once]
+  H --> I{Reconnect?}
+  I -- Yes --> J[commitReconnect exact stage ID]
+  I -- No --> K[Finalize initial account or login]
+  J --> L[Client refreshes authoritative account state]
+  K --> L
+```
+
+### 34.3 Restricted observations and approvals
+On authorized observation with containsRestrictedData, the Overseer enters restricted behavior for the affected Gadget/context: no public-web fetch and no action auto-approval, while complete, manually-reviewed action descriptions are required. An incomplete description must be conspicuous to the reviewer; an incomplete Git push is refused. ownerInvitesOnly additionally disables link-based and delegated sharing but allows directly invited observers after authorization. The flags are independent. The resource remains protected by the Gatekeeper's verification and observer-exclusion contract. Regression tests MUST exercise use-role users, missing observers, mid-session changes and restart persistence.
+
+### 34.4 Device notifications and AI telemetry
+Device notification registrations use an opaque install-bound one-time registration id that is consumed by the central notification service; the backend persists only its opaque subscription id and scoped device key, not an APNs device token or Dashboard OAuth credential. Outbound notification requests are signed with a private installation key; notifications are templated rather than arbitrary provider text. Agent spans (invoke_agent, chat, execute_tool, tool_approval) contain counts and status only, and never prompts or tool data. An invocation's trace ends with the Durable Object invocation. All logs/metrics/errors are diagnostic, never durable authority.
+
+### 34.5 Verification obligations
+Run Git object/pack validation, chat/worktree acceptance/reroot/restart, private-worktree subscriber exclusion, Blueprint proposal/conflict, staged handoff replay and expiration, notification registration, restricted action controls and observer tests. The matching frontend/shared contracts and package docs MUST be updated in the same change. Historical migration records in src/storage-schema do NOT confer automatic migrations to @gadgets/typed-storage.

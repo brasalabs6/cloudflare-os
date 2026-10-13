@@ -137,3 +137,20 @@ Tests SHOULD cover:
 ## 14. Change rules
 
 Adding a new ZoomInfo API family requires entitlement/scope verification against the real provider, consequence/cost classification, observation vs action decision, output bounds, generated types and tests. Never guess provider scopes or billing semantics from naming alone.
+
+## 13. Credit-spending observation and rate-limit flow
+
+ZoomInfo enrichment may consume paid API credits even when it does not mutate a contact record. The connector MUST communicate that economic consequence in the agent-visible operation description and UI where applicable, bound provider results and estimate/charge semantics truthfully. Resource scope and observer policy must be checked before disclosing personal/business records. A duplicate request, a retry after timeout or a failed observer authorization MUST not be hidden as 'free read'; upstream credit charges may already have occurred and should be documented as such.
+
+```mermaid
+flowchart TD
+ A[Scoped lookup/enrichment] --> B[Check account, quota and bound resource]
+ B --> C[Describe possible credit consequence]
+ C --> D[Call provider within configured bounds]
+ D --> E{Provider responded?}
+ E -- Yes --> F[Authorize observation]
+ F --> G[Return bounded data and relevant credit information]
+ E -- No --> H[Report uncertain charge/outcome without blind retry]
+```
+
+Authentication secrets and full enrichment payloads MUST NOT appear in logs. Rate limits, insufficient-credit responses, provider timeouts and sensitive-field redaction must be surfaced correctly. If a credit-consuming request is modeled as an action in future, it must use the normal staged approval path; never silently alter its current execution semantics without coordinating all callers/tests/specs.
