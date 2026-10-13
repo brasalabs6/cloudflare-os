@@ -24,3 +24,8 @@ Record release, provider alias, session/run IDs, duration, token/cost estimates 
 ## Tests and acceptance
 
 Positive tests for allowed models; negative tests for unapproved providers, redirect escapes, DNS/host manipulation, metadata access, private IPs, oversized responses, timeout, invalid ticket, cross-session request, quota exhaustion and secret redaction. Test staging/production secrets separately and verify deployment without displaying secret values.
+
+
+## Normative egress setup
+
+See [ACP_CONTRACTS_V1](../../docs/architecture/ACP_CONTRACTS_V1.md) sections 7 and 10. The Grokbot tested reference installs an explicit `interceptOutboundHttps(host, WorkerEntrypoint)` rule *before* `container.start({enableInternet:false})`; it also bootstraps trust in the ephemeral container CA. Carry this exact threat boundary into the first implementation, reviewing runtime API compatibility. Do not substitute arbitrary proxy URLs or give the CLI long-lived proxy API keys. Require a separately approved hostname policy for Git/dependency bootstrap. Wire model aliases to fixed upstream host/path and budget/rate limits; validate negative redirect/SSRF and connection-disconnect cases.
