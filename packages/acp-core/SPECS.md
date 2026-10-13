@@ -82,3 +82,12 @@ ACP is only one driver transport. Keep JSON-RPC over supervisor-controlled stdio
 ### Acceptance
 
 A change is done only with strict schemas, migrated/verified data shapes, tests for idempotent admission, partial protocol messages, replay and crash/reconciliation, deny-by-default resource grants, source provenance and staging E2E for deployed services. Verify that core Workshop Code Mode and Gatekeeper simulation tests remain green.
+
+
+## Mandatory boundary revision (audit 2026-10-13)
+
+See [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md) and root SPECS §23. **No-overlap rule:** Owns ACP-specific JSON-RPC stdio framing/correlation only. It neither replaces Workshop Cap'n Web ABI nor implements a platform-wide wire protocol; source ACP session IDs must never become authorization or native chat IDs.
+
+**Required preparatory implementation gates:** Compare Hub and Grokbot initialization fixtures with live pinned version; translate via agent-protocol into ACC; test server-initiated permission alongside Workshop action approval without double grant.
+
+This is a reviewed design constraint. Neither this folder nor its plan constitutes a running module. Every completed plan step must link a source SHA, target commit, real contract/security tests and E2E proof where a Worker/Container is involved.

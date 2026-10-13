@@ -85,3 +85,12 @@ Unauthorized HTTP/MCP, tool scope/excess claims, pending approval, revocation mi
 
 **Done only when** every checked item has code and test links, plus an actual release/deploy reference if this package produces a Worker. No long-running autonomous loop or public MCP API is "done" based solely on mocks.
 
+
+
+## Mandatory boundary revision (audit 2026-10-13)
+
+See [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md) and root SPECS §23. **No-overlap rule:** It is an *optional authenticated REST/MCP server export* for already-authorized Workshop capabilities; never a second MCP client/trust engine, Gatekeeper action queue or unscoped direct Task/Runtime API. In particular the existing ExternalMessageGateway trusts callerEmail and MUST NOT be used as public identity admission.
+
+**Required preparatory implementation gates:** Inventory router prefixes /api and /gatekeeper, ExternalMessageGateway trusted-only RPC, and Workshop AuthenticatedApi; design audience-bound revocable ticket and current grant resolver; test tools/list and tools/call against real Gatekeeper action/observation, denial/revocation and anonymous impersonation.
+
+This is a reviewed design constraint. Neither this folder nor its plan constitutes a running module. Every completed plan step must link a source SHA, target commit, real contract/security tests and E2E proof where a Worker/Container is involved.
