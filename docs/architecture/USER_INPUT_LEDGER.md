@@ -128,3 +128,17 @@ pegue também todos os meus inputs que ja existiram nessa sessão e crie um arqu
 - [Base inicial das specs](https://github.com/brasalabs6/cloudflare-os/commit/12ba0acd8f70178f4098f1fb79e3a47d81041f90)
 - [Contratos ACP](./ACP_CONTRACTS_V1.md) · [Matriz de destilação](./ACP_MIGRATION_MATRIX.md)
 - [Grokbot PR #1, fonte de destilação](https://github.com/brasalabs6/grokbot/pull/1)
+
+
+## 2026-10-13 — Evidências adicionadas para U-006/U-007 (anotação posterior, sem alterar inputs)
+
+**Rascunhos implementados no repositório (somente documentação e planejamentos):**
+
+- [Arquitetura unificada de AgentDefinition, Task, loops, EngineDriver, subagentes e ferramentas](./AGENT_PLATFORM_UNIFIED_V2.md) — commit [5b2244c](https://github.com/brasalabs6/cloudflare-os/commit/5b2244c89e1d8c6ef97abad468fc17ff01d3ca82).
+- [Seis novos packages, com SPECS.md e plan.md](https://github.com/brasalabs6/cloudflare-os/commit/83befb767e78cd2f86a4bd1dd7e77a34efebb6cc): agent-protocol, agent-control-plane, agent-loop, agent-harness-native, agent-tool-registry e agent-tool-gateway.
+- [Dez specs/plans ACP, harnesses, runtime, Gatekeepers e UI](https://github.com/brasalabs6/cloudflare-os/commit/53ea6639b7bf34afe41fb594dbe81aeb22264adc).
+- [Oito specs/plans para integração com componentes existentes](https://github.com/brasalabs6/cloudflare-os/commit/c23944d4b061e41e7c4c4435a3d517befb5b621b): Workshop backend/shared/frontend, Scheduler, MCP Shared, MCP BYO/Portal e router.
+- [Matriz de rastreabilidade unificada](./AGENT_FEATURE_TRACEABILITY.md) e [JSON Schema v2](./schemas/agent-platform-v2.schema.json) — incluídos no commit desta anotação.
+- Registro literal criado no commit [162b8ba](https://github.com/brasalabs6/cloudflare-os/commit/162b8ba95e9d7c9819d865cbde4f22968993b823).
+
+**Ainda não implementado:** os pacotes novos não possuem runtime compilável, DOs, API pública/métodos MCP operacionais, deploys, smoke E2E no Cloudflare OS nem provas de paridade. Arquivamento do Grokbot pendente. Planos não são resultado funcional.

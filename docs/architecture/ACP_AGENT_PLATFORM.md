@@ -1,5 +1,7 @@
 # ACP Agent Platform for Cloudflare OS
 
+> **Scope note (2026-10-13):** This page is the original ACP CLI vertical-slice architecture. Persistent AgentDefinitions, autonomous Tasks, native Workshop pi-agent-core, subagents, loop strategies, and MCP/REST module projection are governed by [AGENT_PLATFORM_UNIFIED_V2](./AGENT_PLATFORM_UNIFIED_V2.md). ACP is one pluggable driver, not the platform's sole execution protocol. Both documents refer to implementation plans; the new v2 packages are not deployed.
+
 **Status:** normative implementation specification; runtime implementation pending  
 **Date:** 2026-10-13  
 **Owner:** Cloudflare OS platform  

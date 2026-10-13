@@ -1,0 +1,846 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.brasalabs.dev/cloudflare-os/agent-platform/v2.json",
+  "title": "Unified Agent Platform ACC v1 logical records",
+  "description": "Draft normative structural schemas. Not proof of Runtime implementation; validate semantic cross-record constraints separately in authoritative DO transactions.",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "currency",
+        "maxCostMicros",
+        "maxTokens",
+        "maxWallMs"
+      ],
+      "properties": {
+        "currency": {
+          "const": "USD"
+        },
+        "maxCostMicros": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxWallMs": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "agentDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "agentId",
+        "workspaceId",
+        "ownerPrincipalId",
+        "displayName",
+        "instructionsRef",
+        "preferredEngineId",
+        "harnessId",
+        "profileId",
+        "defaultModelId",
+        "grantsRef",
+        "toolCatalogVersion",
+        "loopPolicyId",
+        "maxConcurrentTasks",
+        "maxChildDepth",
+        "maxTotalChildren",
+        "budget",
+        "status",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "agentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "ownerPrincipalId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "instructionsRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "preferredEngineId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "harnessId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profileId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "defaultModelId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "grantsRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "toolCatalogVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "loopPolicyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "maxConcurrentTasks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "maxChildDepth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "maxTotalChildren": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "budget": {
+          "$ref": "#/$defs/budget"
+        },
+        "status": {
+          "enum": [
+            "DRAFT",
+            "ENABLED",
+            "PAUSED",
+            "ARCHIVED"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "taskId",
+        "workspaceId",
+        "agentId",
+        "source",
+        "parentTaskId",
+        "rootTaskId",
+        "depth",
+        "inputRef",
+        "grantsSnapshotRef",
+        "engineReleaseId",
+        "state",
+        "revision",
+        "lastExecutionId",
+        "nextWakeAt",
+        "currentLoopIteration",
+        "createdAt",
+        "updatedAt",
+        "completedAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "taskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "agentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "sourceId"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "user-chat",
+                "api",
+                "schedule",
+                "hook",
+                "webhook",
+                "parent-agent"
+              ]
+            },
+            "sourceId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            }
+          }
+        },
+        "parentTaskId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rootTaskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inputRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "grantsSnapshotRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "engineReleaseId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "state": {
+          "enum": [
+            "QUEUED",
+            "CLAIMED",
+            "RUNNING",
+            "WAITING_APPROVAL",
+            "SLEEPING",
+            "PAUSING",
+            "PAUSED",
+            "CANCELLING",
+            "SUCCEEDED",
+            "FAILED",
+            "CANCELLED",
+            "OUTCOME_UNKNOWN"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lastExecutionId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextWakeAt": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "currentLoopIteration": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "executionId",
+        "taskId",
+        "engineId",
+        "runId",
+        "attempt",
+        "fencingToken",
+        "leaseUntil",
+        "startedAt",
+        "completedAt",
+        "outcome",
+        "checkpointId"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "executionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "taskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "engineId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "runId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fencingToken": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "leaseUntil": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startedAt": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "completedAt": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "PENDING",
+            "SUCCESS",
+            "FAILED",
+            "CANCELLED",
+            "UNKNOWN"
+          ]
+        },
+        "checkpointId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "eventId",
+        "agentId",
+        "taskId",
+        "executionId",
+        "runId",
+        "parentRunId",
+        "source",
+        "streamId",
+        "sequence",
+        "occurredAt",
+        "visibility",
+        "kind",
+        "payloadVersion",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "agentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "taskId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "executionId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parentRunId": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "engineId",
+            "transport",
+            "nativeSessionId",
+            "nativeEventId"
+          ],
+          "properties": {
+            "engineId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "transport": {
+              "type": "string"
+            },
+            "nativeSessionId": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nativeEventId": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "streamId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "visibility": {
+          "enum": [
+            "owner",
+            "authorized-observer",
+            "private-diagnostic"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "state",
+            "message",
+            "reasoning.summary",
+            "tool",
+            "command",
+            "approval",
+            "subagent",
+            "file",
+            "artifact",
+            "usage",
+            "heartbeat",
+            "checkpoint",
+            "protocol.extension",
+            "diagnostic"
+          ]
+        },
+        "payloadVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "payload": {
+          "type": "object",
+          "maxProperties": 100
+        }
+      }
+    },
+    "loopPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "loopPolicyId",
+        "kind",
+        "maxIterationsPerTask",
+        "maxStepsPerWake",
+        "maxConsecutiveErrors",
+        "minSleepMs",
+        "maxTaskWallMs",
+        "termination"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "loopPolicyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "kind": {
+          "enum": [
+            "single-turn",
+            "until-done",
+            "periodic",
+            "reactive",
+            "plan-execute",
+            "custom"
+          ]
+        },
+        "maxIterationsPerTask": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxStepsPerWake": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxConsecutiveErrors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "minSleepMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxTaskWallMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "termination": {
+          "type": "object",
+          "required": [
+            "kind",
+            "configRef"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "result",
+                "time",
+                "iteration-limit",
+                "manual",
+                "budget",
+                "predicate"
+              ]
+            },
+            "configRef": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "toolManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "moduleId",
+        "version",
+        "resourceType",
+        "toolId",
+        "title",
+        "inputSchemaRef",
+        "outputSchemaRef",
+        "readOnlyHint",
+        "sideEffectKind",
+        "permissionScope",
+        "transportTargets",
+        "maxInputBytes",
+        "maxOutputBytes"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "moduleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resourceType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "toolId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "inputSchemaRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "outputSchemaRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "readOnlyHint": {
+          "type": "boolean"
+        },
+        "sideEffectKind": {
+          "enum": [
+            "OBSERVATION",
+            "ACTION"
+          ]
+        },
+        "permissionScope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "transportTargets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "capnweb",
+              "http",
+              "mcp",
+              "acp-mcp"
+            ]
+          }
+        },
+        "maxInputBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxOutputBytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/agentDefinition"
+    },
+    {
+      "$ref": "#/$defs/task"
+    },
+    {
+      "$ref": "#/$defs/execution"
+    },
+    {
+      "$ref": "#/$defs/event"
+    },
+    {
+      "$ref": "#/$defs/loopPolicy"
+    },
+    {
+      "$ref": "#/$defs/toolManifest"
+    }
+  ]
+}
