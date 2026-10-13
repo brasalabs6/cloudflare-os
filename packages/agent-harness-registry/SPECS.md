@@ -32,3 +32,8 @@ Reject mutable image tags, missing digests, duplicate IDs, unrecognized auth str
 ## Tests and acceptance
 
 Test manifest schema validation, version compatibility, allowlist enforcement, deterministic cohort assignment, sticky session assignment, deprecation, rollback behavior and migration compatibility. The registry must return structured diagnostics rather than silently falling back to another harness.
+
+
+## Release and routing schema
+
+Use [ACP_CONTRACTS_V1](../../docs/architecture/ACP_CONTRACTS_V1.md) sections 1, 6 and 8 for `Release`, `Experiment` and `Session Directory`. The registry picks eligible immutable release metadata but never reroutes an existing session. A Worker/container release must have a deployed configured `runtimeTargetId` before activation. Manifest capability lists are upper bounds; the live handshake decides what the UI may expose. The registry must reject a missing protocol fixture digest and unverified adapters.
