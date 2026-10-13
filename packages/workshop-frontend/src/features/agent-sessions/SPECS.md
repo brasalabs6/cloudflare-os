@@ -36,3 +36,8 @@ Use the existing Workshop transport patterns wherever possible. Terminal transpo
 ## Acceptance
 
 Browser E2E covers create, prompt, streaming, approval round-trip, terminal attachment, file inspection, refresh/replay, cancellation, session stop, denied access and a recoverable runtime failure for each supported harness. Mock UI tests do not replace real Cloudflare staging E2E.
+
+
+## Canonical UI wire/replay contract
+
+Consume the authorized `RuntimeResult`, `AgentEvent`, `RunState` and `SessionState` shapes defined in [ACP_CONTRACTS_V1](../../../../../docs/architecture/ACP_CONTRACTS_V1.md). Store `lastSeenSequence` per session for reconnect; deduplicate `(agentSessionId,sequence)` and explicitly handle CURSOR_EXPIRED with consistent snapshot/refetch. Display OUTCOME_UNKNOWN without automatic retry; preserve pending permission request identities and expiry. Provide Git status/diff, operation progress, logs and notification behavior from Grokbot F-001–F-017 as explicit migration checklist items rather than silently omitting them. Terminal must use a separately granted Computer capability and single-use ticket.
