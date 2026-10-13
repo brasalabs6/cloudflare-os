@@ -204,3 +204,51 @@ flowchart TD
 ```
 
 Search results advertise tools, not authority to execute them. Invocation MUST still pass the existing pinned scope, live annotation classification, action staging and observation authorization. Tests MUST check case, word separators, long malicious descriptions, query truncation, empty query, endpoint pagination and identical cross-connector matches.
+
+
+## Unified Agent Platform integration contract — 2026-10-13
+
+**Status:** incremental integration SPEC and IMPLEMENTATION DRAFT, not a runtime change. **Normative:** [Unified Agent Platform v2](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input and evidence ledger](../../docs/architecture/USER_INPUT_LEDGER.md). For this package see the [ordered plan](./plan.md). Existing behaviors documented above remain authoritative until a reviewed, backwards-compatible migration is implemented.
+
+### Component and control flow
+
+```mermaid
+flowchart LR
+ BYO[Generic MCP Gatekeeper] --> Shared[mcp-shared trusted client core]
+ Portal[MCP Portal Gatekeeper] --> Shared
+ Shared --> Tool[Tool Registry imported descriptors]
+ Tool --> Agent[Native & ACP agents]
+ Tool --> Export[New Tool Gateway server export]
+ Export --> GK[Gatekeepers authorize again]
+```
+
+### Proposed integration data schema and API changes
+
+```typescript
+type McpImportDescriptor={schemaVersion:1;serverIdentity:string;trust:'byo'|'portal-vetted'|'portal-unvetted';toolId:string;scopeFingerprint:string;catalogRevision:string;readOnlyHint:boolean;maxArgsBytes:number};
+type McpExportMapping={toolId:string;gatekeeperResourceRef:string;grantVersion:string;approvalMode:'stage-and-apply'|'observation'}
+```
+
+Validate at boundaries, add JSON Schema where values cross Worker/process/storage, specify schema version and migrations. This is a draft shape to be reconciled with actual public types and Cap'n Web support before modifying kernel interfaces.
+
+### Implementation file map
+
+```text
+packages/mcp-shared/
+  src/tools.ts (single existing trust/classification authority)
+  src/catalog.ts + src/client.ts (retain)
+  src/agent-tool-registry-adapter.ts (thin new export)
+  src/__tests__/{catalog-export-parity,approval-classification,revoked-grant}.test.ts
+  SPECS.md
+  plan.md
+```
+
+### Ownership, loops, security and backwards compatibility
+
+Existing MCP import remains the only OAuth/endpoint validation/readOnlyHint classifier; a new Agent Tool Registry may project its scoped catalog but cannot copy classification, widen a BYO tool or treat unvetted annotations as authority. Exported MCP server is owned by agent-tool-gateway, not by mcp-shared client.
+
+**Legacy/source comparison:** mcp-shared SPECS/README, tools.ts, client.ts, catalog.ts and existing BYO/portal Gatekeepers; no assumption that MCP client implements a server. Preserve all already-tested features and evidence. Do not introduce a parallel scheduler, MCP client policy, login authority, Cap'n Web transport or user-facing run-loop persistence.
+
+### Definition of done
+
+Source→target traceability, schema fixtures, existing test parity and new negative boundary tests, authenticated staging proof for new cross-worker behavior and migration-aware rollback. **Detailed steps:** [plan.md](./plan.md).

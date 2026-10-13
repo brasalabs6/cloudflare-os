@@ -370,3 +370,48 @@ flowchart TD
 
 ### 24.4 Constraints for API evolution
 Changing RPC signatures, enum discriminators, promise pipelining, wire serialization, auth/passphrase hashing constants, workpiece IDs, action status names, hook controller lifecycle, or Blueprint commit metadata is a compatibility migration. Provide cross-package typechecked consumers, regression tests and an explicit rollout/backward-compatibility decision. Gatekeeper-client code MUST NOT reinterpret approval or sharing status on its own.
+
+## Unified Agent Platform integration contract — 2026-10-13
+
+**Status:** incremental integration SPEC and IMPLEMENTATION DRAFT, not a runtime change. **Normative:** [Unified Agent Platform v2](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input and evidence ledger](../../docs/architecture/USER_INPUT_LEDGER.md). For this package see the [ordered plan](./plan.md). Existing behaviors documented above remain authoritative until a reviewed, backwards-compatible migration is implemented.
+
+### Component and control flow
+
+```mermaid
+flowchart LR
+ UI[Workshop UI types] --> API[Existing Cap'n Web api.ts]
+ Agent[Native AgentSpawnerConfig] --> API
+ API --> V[Versioned ACC façade types]
+ V --> CP[Agent Control Plane]
+ API --> GK[Gatekeeper capability types]
+```
+
+### Proposed integration data schema and API changes
+
+```typescript
+interface AgentPlatformClient {listAgentDefinitions(options:{cursor?:string;limit?:number}):Promise<AgentPage>;getAgentDefinition(agentId:string):Promise<AgentView|null>;createTask(input:CreateTaskRequest):Promise<TaskAccepted>;listTaskEvents(input:{taskId:string;afterSequence:number;limit:number}):Promise<AgentEventPage>;getEngineCapabilities(engineId:string):Promise<EngineDescriptor>}
+interface AgentTaskLink {agentId:string;taskId:string;chatId:number|null;engineId:string;schemaVersion:1}
+```
+
+Validate at boundaries, add JSON Schema where values cross Worker/process/storage, specify schema version and migrations. This is a draft shape to be reconciled with actual public types and Cap'n Web support before modifying kernel interfaces.
+
+### Implementation file map
+
+```text
+packages/workshop-shared/
+  src/agent-platform/{types,agents,tasks,events,tools,capabilities}.ts
+  src/__tests__/{serialization,back-compat,capnweb-typing}.test.ts
+  src/api.ts (small JSDoc-reviewed additive API extension only)
+  SPECS.md
+  plan.md
+```
+
+### Ownership, loops, security and backwards compatibility
+
+Do not add a second browser transport. Extend existing Cap'n Web AuthenticatedApi/Overseer interfaces additively with versioned ACC payloads, preserving workpiece/chat IDs and existing backend-generated stubs; any exported member needs JSDoc, no as unknown as RPC casts.
+
+**Legacy/source comparison:** Existing src/api.ts AgentSpawnerConfig/newAgentSpawnerGatekeeper, AiChatStreamEvent, AiToolCall; src/gatekeeper.ts vendor/account/session/approval/observer semantics. Preserve all already-tested features and evidence. Do not introduce a parallel scheduler, MCP client policy, login authority, Cap'n Web transport or user-facing run-loop persistence.
+
+### Definition of done
+
+Source→target traceability, schema fixtures, existing test parity and new negative boundary tests, authenticated staging proof for new cross-worker behavior and migration-aware rollback. **Detailed steps:** [plan.md](./plan.md).

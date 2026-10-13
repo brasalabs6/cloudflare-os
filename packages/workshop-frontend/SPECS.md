@@ -358,3 +358,48 @@ New shared components live in @gadgets/ui, including controlled HierarchicalList
 
 ### 27.4 Verification
 Test ConnectHandoffPage, AuthContext/RpcContext replacement, stale stub disposal, account subscriptions, admin model gateway form validation, attachments, accepting Blueprint merges with conflicts, mobile touch drag, keyboard focus, sensitive-data reporting and restricted approval notices. Do not test only a static render of state transitions.
+
+## Unified Agent Platform integration contract — 2026-10-13
+
+**Status:** incremental integration SPEC and IMPLEMENTATION DRAFT, not a runtime change. **Normative:** [Unified Agent Platform v2](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input and evidence ledger](../../docs/architecture/USER_INPUT_LEDGER.md). For this package see the [ordered plan](./plan.md). Existing behaviors documented above remain authoritative until a reviewed, backwards-compatible migration is implemented.
+
+### Component and control flow
+
+```mermaid
+flowchart LR
+ App[Existing Workshop SPA] --> Chat[Current native chat/code UI]
+ App --> Agents[Unified Agents management screens]
+ Agents --> Tasks[Background tasks/loops/subagents]
+ Agents --> Events[ACC replay reader]
+ Chat --> Events
+ Agents --> Grants[Approval/scheduler/MCP capabilities]
+```
+
+### Proposed integration data schema and API changes
+
+```typescript
+type AgentNavigationLink={workspaceId:string;agentId:string|null;taskId:string|null;chatId:number|null;engineKind:'workshop-native'|'acp-cli'|'native-cli'|'custom'}
+```
+
+Validate at boundaries, add JSON Schema where values cross Worker/process/storage, specify schema version and migrations. This is a draft shape to be reconciled with actual public types and Cap'n Web support before modifying kernel interfaces.
+
+### Implementation file map
+
+```text
+packages/workshop-frontend/
+  src/features/agent-sessions/ (new unified screens described in nested SPECS.md)
+  src/router/ (route integration; inspect existing layout)
+  src/__tests__/agent-navigation.browser.test.tsx
+  SPECS.md
+  plan.md
+```
+
+### Ownership, loops, security and backwards compatibility
+
+Integrate new feature-owned agent management into existing SPA navigation and Cap'n Web connection provider, using current Kumo UI patterns and avoiding a second authentication, query cache or approval interface. Native Code Mode must keep its current conversation UX; new Agent task drill-down is additive.
+
+**Legacy/source comparison:** Existing Workshop frontend SPECS, Kumo/@gadgets/ui, Grokbot dashboard/chat/file/terminal UI and F-001..F-017. Preserve all already-tested features and evidence. Do not introduce a parallel scheduler, MCP client policy, login authority, Cap'n Web transport or user-facing run-loop persistence.
+
+### Definition of done
+
+Source→target traceability, schema fixtures, existing test parity and new negative boundary tests, authenticated staging proof for new cross-worker behavior and migration-aware rollback. **Detailed steps:** [plan.md](./plan.md).

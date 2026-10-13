@@ -131,3 +131,49 @@ flowchart TD
 ```
 
 Proxying must preserve required methods and WebSocket upgrades but avoid treating untrusted headers as proof of authentication. Tests MUST cover unknown/malformed Gatekeeper suffix, conflicting route prefixes, Email absence, API WebSocket handshake, assets fallback and provider OAuth callback routes.
+
+
+## Unified Agent Platform integration contract — 2026-10-13
+
+**Status:** incremental integration SPEC and IMPLEMENTATION DRAFT, not a runtime change. **Normative:** [Unified Agent Platform v2](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input and evidence ledger](../../docs/architecture/USER_INPUT_LEDGER.md). For this package see the [ordered plan](./plan.md). Existing behaviors documented above remain authoritative until a reviewed, backwards-compatible migration is implemented.
+
+### Component and control flow
+
+```mermaid
+flowchart TD
+ Req[Public request] --> Router[Existing router Worker]
+ Router -->|/api*| W[Workshop Backend]
+ Router -->|/gatekeeper/*| G[Existing Gatekeepers]
+ Router -->|/agent-api/v1/*| API[New Tool Gateway Worker]
+ Router -->|/agent-mcp/*| MCP[Same Tool Gateway MCP endpoint]
+ Router -->|assets| AS[Workshop frontend assets]
+```
+
+### Proposed integration data schema and API changes
+
+```typescript
+type AgentIngressRoute={routePrefix:'/agent-api/v1'|'/agent-mcp';targetBinding:'AGENT_TOOL_GATEWAY';authMode:'bearer-scoped';maxBodyBytes:number;timeoutMs:number;allowCorsOrigins:string[]}
+```
+
+Validate at boundaries, add JSON Schema where values cross Worker/process/storage, specify schema version and migrations. This is a draft shape to be reconciled with actual public types and Cap'n Web support before modifying kernel interfaces.
+
+### Implementation file map
+
+```text
+packages/router/
+  src/{routing,auth-proxy}.ts (review existing router file layout first)
+  cloudflare.config.ts (binding update; generated wrangler.jsonc)
+  src/__tests__/{agent-api-routing,mcp-routing,auth-header,legacy-prefix}.test.ts
+  SPECS.md
+  plan.md
+```
+
+### Ownership, loops, security and backwards compatibility
+
+Do not break existing /api/*, /gatekeeper/* or asset routing; add opt-in exact /agent-api/v1/* and /agent-mcp/* to an independently deployed agent-tool-gateway binding, preserving request streaming and Workshop-origin CORS. Router handles forwarding only; gateway authenticates ticket and enforces grants.
+
+**Legacy/source comparison:** Existing packages/router routing source and AGENTS.md config/release conventions; frontend uses /api and /gatekeeper paths. Preserve all already-tested features and evidence. Do not introduce a parallel scheduler, MCP client policy, login authority, Cap'n Web transport or user-facing run-loop persistence.
+
+### Definition of done
+
+Source→target traceability, schema fixtures, existing test parity and new negative boundary tests, authenticated staging proof for new cross-worker behavior and migration-aware rollback. **Detailed steps:** [plan.md](./plan.md).

@@ -551,3 +551,48 @@ Device notification registrations use an opaque install-bound one-time registrat
 
 ### 34.5 Verification obligations
 Run Git object/pack validation, chat/worktree acceptance/reroot/restart, private-worktree subscriber exclusion, Blueprint proposal/conflict, staged handoff replay and expiration, notification registration, restricted action controls and observer tests. The matching frontend/shared contracts and package docs MUST be updated in the same change. Historical migration records in src/storage-schema do NOT confer automatic migrations to @gadgets/typed-storage.
+
+## Unified Agent Platform integration contract — 2026-10-13
+
+**Status:** incremental integration SPEC and IMPLEMENTATION DRAFT, not a runtime change. **Normative:** [Unified Agent Platform v2](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input and evidence ledger](../../docs/architecture/USER_INPUT_LEDGER.md). For this package see the [ordered plan](./plan.md). Existing behaviors documented above remain authoritative until a reviewed, backwards-compatible migration is implemented.
+
+### Component and control flow
+
+```mermaid
+flowchart TD
+ Browser[Workshop Cap'n Web] --> O[Overseer DO]
+ O --> Pi[runAgent / pi-agent-core]
+ O --> C[Authenticated Agent Control Plane RPC]
+ Pi --> Events[ACC source projector]
+ O --> G[Existing Gatekeeper approval queue]
+ C --> Engine[Native / CLI runtime]
+```
+
+### Proposed integration data schema and API changes
+
+```typescript
+type NativeAgentTaskLink={schemaVersion:1;workspaceId:string;chatId:number;agentId:string;taskId:string;nativeTurnId:string|null;lastProjectedChatSequence:number;createdAt:string};
+type UserTaskCommand={schemaVersion:1;idempotencyKey:string;expectedAgentRevision:number;agentId:string;command:'create-task'|'pause'|'resume'|'cancel';inputRef:string|null};
+```
+
+Validate at boundaries, add JSON Schema where values cross Worker/process/storage, specify schema version and migrations. This is a draft shape to be reconciled with actual public types and Cap'n Web support before modifying kernel interfaces.
+
+### Implementation file map
+
+```text
+packages/workshop-backend/
+  src/agent-platform/{native-turn-bridge,event-projection,control-plane-binding,task-admission}.ts
+  src/__tests__/{native-event-parity,task-auth,spawner-compatibility}.test.ts
+  SPECS.md
+  plan.md
+```
+
+### Ownership, loops, security and backwards compatibility
+
+Remain owner of Workspace identity, per-chat history, action queue/observer verification, native pi-agent-core turn, edit/change barriers and compaction. A thin native bridge creates independent tasks only with authorized principal/grant and maps existing chat events; it must not copy the whole ChatHistory into a new task DO or turn on a second native agent scheduler.
+
+**Legacy/source comparison:** Existing src/agent.ts runAgentLoopContinue + step commit barrier, src/overseer.ts alarms/pendingAgentCalls/approval/replay, src/agent-compaction.ts, src/agent-spawner-binding import, scheduler callbacks. Preserve all already-tested features and evidence. Do not introduce a parallel scheduler, MCP client policy, login authority, Cap'n Web transport or user-facing run-loop persistence.
+
+### Definition of done
+
+Source→target traceability, schema fixtures, existing test parity and new negative boundary tests, authenticated staging proof for new cross-worker behavior and migration-aware rollback. **Detailed steps:** [plan.md](./plan.md).
