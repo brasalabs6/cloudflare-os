@@ -199,3 +199,17 @@ faça isso em um PR
 **Mudança:** acrescentadas diretrizes adaptadas do Gist no topo do `AGENTS.md`, preservando as instruções específicas já existentes; regras de descoberta, escopo, compatibilidade, ownership, contratos inter-repositórios, segurança, TDD, geração de artefatos e relatório final foram alinhadas ao código e ao `ROADMAP.md` atual. Sem mudanças de runtime, packages ou contratos.
 
 **Validação:** revisão documental dos arquivos `AGENTS.md`, `README.md`, `ROADMAP.md`, `package.json` e `pnpm-workspace.yaml` e da lista de packages. Sem execução de testes ou deploy por ser uma alteração exclusivamente documental. Referência externa: https://gist.github.com/nonexphere/1c1f1105e466326373aee9dd90b838eb. Evidência: PR desta alteração; o merge ainda depende de revisão.
+
+
+## U-011 — Deep AGENTS review and complete README package inventory (2026-10-13)
+
+**User input (verbatim in this session):**
+
+```text
+Execute uma revisão mais profunda e detalhada.
+também proponha atualização do arquivo README.md detalhando/listando todos os modulos, lá nele deve sempre ter  a lista atualizada dos packges
+```
+
+**Review and implementation:** reviewed the source Gist in full, existing AGENTS/README, actual packages directory, all manifest names under `packages/*`, `scripts/package.json`, `pnpm-workspace.yaml`, and `.github/workflows/ci.yml`. Strengthened AGENTS guidance on README inventory, early-access maturity, TDD, and dependency policy without replacing package-specific instructions. Added a complete role-classified package inventory to README, explicitly separating `packages/agent-runtime` (specs only, no manifest) from installable workspace packages and distinguishing library modules from deployable Gatekeepers. Added `scripts/check-readme-packages.mjs` and focused unit tests; CI checks the inventory on pull requests so newly added, missing, renamed or stale directories cannot silently leave README out of date. No runtime module, feature, MCP component, API or deployment was created.
+
+**Verification:** source README/directory/manifests reviewed; test fixture suite `node --test scripts/check-readme-packages.test.mjs` passed locally against Node.js 22 with 4 test cases in an isolated scratch copy, covering valid/added/stale/duplicate/misnamed/workspace-pattern changes. The GitHub PR CI uses Node.js 24 and must confirm execution against the full checked-out monorepo. No runtime build, Cloudflare staging run or deployment was performed. Change remains documentation/CI-only until merge.
