@@ -1,5 +1,7 @@
 # Feature traceability — Grokbot / Hub / Workshop / autonomous agent platform
 
+> **Architecture-correction note, 2026-10-13:** The [existing module ownership audit](./EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS.md §23, and actual Workshop/Gatekeeper code take precedence over speculative target ownership in this earlier v2 design. The 15 new package directories are documentation-only; module adoption is subject to no-overlap gates.
+
 **As of:** 2026-10-13 · **Status:** verification map / implementation backlog, **not an implementation completion claim**. Source commits and target tests must be filled per item before marking MIGRATED. [Unified v2](./AGENT_PLATFORM_UNIFIED_V2.md) · [ACP contracts](./ACP_CONTRACTS_V1.md) · [User inputs](./USER_INPUT_LEDGER.md).
 
 ## Evidence baseline

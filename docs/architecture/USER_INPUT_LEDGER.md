@@ -142,3 +142,18 @@ pegue também todos os meus inputs que ja existiram nessa sessão e crie um arqu
 - Registro literal criado no commit [162b8ba](https://github.com/brasalabs6/cloudflare-os/commit/162b8ba95e9d7c9819d865cbde4f22968993b823).
 
 **Ainda não implementado:** os pacotes novos não possuem runtime compilável, DOs, API pública/métodos MCP operacionais, deploys, smoke E2E no Cloudflare OS nem provas de paridade. Arquivamento do Grokbot pendente. Planos não são resultado funcional.
+
+
+## U-008 — Auditoria minuciosa e eliminação de sobreposições (2026-10-13)
+
+**Tipo:** transcrição literal do pedido recebido nesta sessão.
+
+```text
+Eu preciso que você faça uma análise mais minuciosa e revise tudo e principalmente revisar os módulos já existentes pra você conseguir implementar o nosso sistema sem que a gente sobreponha a responsabilidade de outros módulos que já existam, tá ligado?
+```
+
+**Objetivo interpretado:** auditar os módulos existentes da main antes de iniciar runtime/autonomia, descobrir duplicação de responsabilidades, revisar as specs/planos, corrigir o documento canônico raiz e estabelecer critérios de implementação que preservem as funcionalidades maduras do Cloudflare OS.
+
+**Entregue / evidência:** [auditoria dos 32 packages existentes, 15 novos diretórios e 20 decisões de fronteira](./EXISTING_MODULE_BOUNDARIES_AUDIT.md), commit [cb71dab](https://github.com/brasalabs6/cloudflare-os/commit/cb71dab154c7b595cb38afece979bce5953f1cb8); atualização normativa do root SPECS.md §23, correções de specs/plans dos módulos conflitantes e registro desta entrada no commit que introduz estas linhas. Nenhum novo runtime foi desenvolvido ou testado; os principais bloqueios são ABI/approval, task-to-native dispatch, MCP export auth e lançamento de containers. Grokbot permanece sem arquivamento.
+
+**Regra de próximas alterações:** atualizações datadas por novas entradas/anotações, sem modificar o texto literal.
