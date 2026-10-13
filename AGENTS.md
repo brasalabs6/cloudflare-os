@@ -1,3 +1,52 @@
+# Cloudflare OS — engineering policy (adapted from multi-repo AGENTS.md)
+
+> Adapted from [nonexphere's multi-repository AGENTS.md](https://gist.github.com/nonexphere/1c1f1105e466326373aee9dd90b838eb). This section supplements the repository-specific instructions below; it does not replace existing kernel, security, frontend, or Gatekeeper rules. Treat `ROADMAP.md`, root `SPECS.md`, and the actual implementation as the source of truth for scope, contracts, and existing behavior.
+
+## Instruction hierarchy and repository discovery
+
+- Apply instructions from the root `AGENTS.md`, then more local package `AGENTS.md` files if present. Respect the most specific applicable rules without weakening security or correctness.
+- Before editing, inspect the relevant `README.md`, `ROADMAP.md`, `SPECS.md`, package metadata, `pnpm-workspace.yaml`, actual interfaces and implementations, tests, CI, Wrangler/config generation and deployment boundaries. A proposal or specs-only directory is not a working package.
+- This is a pnpm monorepo using TypeScript, React/Vite, Cloudflare Workers, Durable Objects, Dynamic Worker Facets, Cap'n Web RPC, and separate Gatekeeper Workers. Do not guess package ownership from names alone. In particular, `gatekeeper-kit` and `mcp-shared` are libraries, not independently deployable Workers.
+- Read `docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md` before extending the agent platform. Inspect the relevant package source, not only architecture documents.
+- Keep the exhaustive inventory in the root `README.md` in sync with every `packages/*` directory and the `scripts/` workspace package; update it in the same PR when a package is created, renamed, removed or changes name. Distinguish an installable package from a specs-only directory. Run `pnpm docs:packages:check` and its tests (`pnpm docs:packages:test`); CI enforces this.
+
+## Maturity, compatibility and scope
+
+- Treat the repository as an actively evolving platform with security-critical, tested interfaces and potentially deployed consumers. Do **not** infer that internal/public contracts may be broken just because an initiative is pre-production; confirm the consumer and deployment impact first.
+- The root README explicitly labels the software as **early access**, not as a blanket license to break existing interfaces; its documented deployments, integrations and shared contracts require compatibility review. Do not assert an unverified production/non-production status for every deployment.
+- Preserve existing native chat behavior, Cap'n Web RPC contracts, Gatekeeper capability/approval rules, workspace ownership, environment bindings, persisted data and release compatibility unless an explicitly reviewed change authorizes otherwise. Breaking interfaces need identified consumers, a migration and rollback strategy.
+- Keep each change within the requested scope. Do not bundle broad cleanup, dependency upgrades, architectural redesign, or compatibility shims into unrelated work. Do not preserve obsolete paths without a reason, but establish that they are truly unused before deleting them.
+- The **active implementation priority** is `ROADMAP.md` Phase 1: Grok CLI in an isolated Cloudflare Sandbox/Container through the existing Workshop chat. Reuse Overseer, chat history/streaming, authentication and approval mechanisms; keep the minimum Grok/ACP-specific runtime in the planned `packages/agent-runtime`. No new MCP server, registries, gateway, scheduler, competing chat UI, or speculative packages in Phase 1. Later roadmap phases are blocked until their gates are met.
+
+## Correctness, ownership, and cross-repository contracts
+
+- Favor the smallest explicit, robust solution. Avoid hacks, monkey patches, hidden state, weak casts, simulated success, unjustified abstraction layers, and parallel mechanisms already implemented elsewhere.
+- Determine who owns each piece of authoritative state, permission, contract and side effect. A consumer must not redefine its producer's contracts. Reuse existing Workshop/Overseer, Gatekeeper Kit, MCP Shared, Scheduler, Context, observability and release machinery where applicable.
+- For changes to RPC/HTTP APIs, event schemas, shared types, packages, CLI entrypoints, environment bindings or persistence, inspect known producers and consumers in this monorepo and in related repositories **when access and evidence permit**. Do not invent upstream/downstream dependencies. Report unverified relationships as uncertainties rather than assuming compatibility.
+- `brasalabs6/mcp-registry` is an existing, separately owned project to evaluate in a **later** phase, not permission to build a duplicate registry or infer its current API. Changes spanning repositories require explicit, reviewed contract and ownership boundaries.
+
+## Clarification, stop conditions and security
+
+- Infer trivial details from code and tests. For materially different architectural choices, unclear ownership, security-sensitive or irreversible changes, identify the blocking decision instead of inventing requirements. State conservative assumptions and verification gaps.
+- Stop rather than ship an unsafe shortcut, a knowingly incomplete implementation disguised as finished, a duplicate authoritative subsystem, an unsupported contract change, or destructive deletion without evidence. Report the blocker and the smallest safe path.
+- Never commit secrets, credentials, personal data, local `.env` files, or sensitive prompt/tool payloads. Treat capabilities, share/connect URLs, cross-tenant data, model egress, user identity, Gatekeeper approvals, sandbox execution, and remote tool access as explicit trust boundaries. Respect existing local security rules below.
+
+## Tests, generated files, and review
+
+- For behavior changes and bug fixes, follow red-green-refactor: establish a real failing behavior/regression test **for the intended reason**, implement the minimum change, verify it turns green, then refactor without changing behavior. If a meaningful automated test or verified external contract is unavailable, surface that limitation before asserting success; never disguise a mock-only check as a passing integration test. Do not add production-only hooks merely to simplify tests.
+- For stable/external/cross-repository contracts, add or update contract tests grounded in the real shared schema. If a required schema cannot be verified, resolve the contract gap before changing it.
+- Documentation-only changes need review of Markdown, paths, semantics and applicability; do not invent runtime tests. Validate affected packages instead of always running the entire monorepo.
+- Do not hand-edit generated Worker configs, types, clients or bundles. Update their sources and run the repository generator. Lockfile changes must follow the pnpm toolchain and supply-chain policy.
+- Avoid new dependencies unless they solve a demonstrated problem that current libraries or platform primitives do not; assess Worker compatibility, bundle size, maintenance, licenses, security and transitive supply-chain impact. Never add a dependency solely for a small README or CI consistency check.
+- Use the commands **as defined by current scripts**: `pnpm test`, `pnpm build`, `pnpm lint:check`, `pnpm configs:check`, and targeted package scripts where appropriate. Never claim a command passed unless it ran.
+- Review kernel changes (`packages/workshop-backend` and public `packages/workshop-shared` APIs) especially carefully and prefer small, independently reviewable diffs. Preserve the existing package-specific guidance below.
+
+## Completion report
+
+After changing the repository, state what changed, the exact files affected, which commands/checks ran and their results, what was not run, unresolved assumptions, consumer/migration impacts, and whether a deployment or other repository must be coordinated. An approved plan is **not** an implementation; a successful commit is **not** a deployment. Record available verbatim user input and evidence in `docs/architecture/USER_INPUT_LEDGER.md` according to the existing repository policy.
+
+---
+
 This project is building a platform for "vibe coded" personal applications and AI agents that run inside a strong sandbox.
 
 The following files are commonly important to reference:
