@@ -37,3 +37,51 @@ Status values:
 ## Rules for closing migration rows
 
 Every row must end as one of: MIGRATED, ALREADY_COVERED, DEFERRED_WITH_REASON, OBSOLETE_WITH_REASON or BLOCKED_WITH_EVIDENCE. Add a pull request, test result or code reference before claiming completion. Staging and production results must be labeled separately. Do not migrate GrokBot Postgres tables by default; first determine whether the existing Workshop data model covers the use case.
+
+
+## Functional traceability — Grokbot F-001 to F-017
+
+Source: `brasalabs6/grokbot`, PR #1 (`feat/grokbot-p00-acp-cloudflare-spike`); **source implementation is staging evidence, not new-platform acceptance**. Every row is initially OPEN and must be closed with target file, commit, test and staging evidence.
+
+| Feature | Source proof / code to distill | Target package(s) | Initial work |
+|---|---|---|---|
+| F-001 Identity/access | `lib/auth/access-policy.ts`, access-policy tests | Workshop + Coding Agents Gatekeeper | REUSE + cross-workspace contract tests |
+| F-002 Dashboard | `components/agent-sessions/dashboard.tsx` | Workshop UI | PORT state/status, search, operator actions |
+| F-003 Create wizard | `lib/agent/contracts.ts`, `app/api/agent-sessions/route.ts` | UI + Registry + Directory | PORT validation, release selection |
+| F-004 Session page | `session-detail.tsx` | Workshop UI | PORT session layout, status, tabs |
+| F-005 ACP chat | `acp-chat.tsx`, `lib/agent/run-permit.ts` | Runtime + ACP Core + UI | PORT idempotent prompt and run reconciliation |
+| F-006 Streaming/replay | `lib/agent/acp-events.ts`, events routes | Runtime DO + UI | PORT ordering; NEW retention-floor semantics |
+| F-007 Tool timeline | `acp-chat.tsx`, runtime ACP updates | ACP Core + UI | PORT normalized tool lifecycle |
+| F-008 Approvals | permission UI, ACP ticket/runtime code | Coding Agents + Runtime | PORT; resolve distinct Workshop/ACP approval contracts |
+| F-009 Models/inference | `config/grok-models.toml`, `ai-gateway.ts` | Registry + Egress | PORT allowlisted model/proxy behavior |
+| F-010 PTY/tmux | `agent-terminal.tsx`, `services/sandbox-runtime/src/index.ts` | Computers Gatekeeper + Runtime + UI | PORT generation tickets, reconnect and PTY |
+| F-011 Files | `file-browser.tsx`, files route, workspace tool | Computers Gatekeeper + Runtime + UI | PORT safe reads; ADD writes/uploads only with grants |
+| F-012 Git | workspace helpers, Grokbot F-012 contract | Runtime + Computers + UI | NEW/VERIFY status, diff and git clone controls |
+| F-013 Lifecycle | `lib/agent/lifecycle.ts`, reconciler routes | Runtime DO + UI | PORT state transitions, stop/suspend/resume/delete |
+| F-014 Logs | runtime status, health and diagnostics | Runtime observability + UI | NEW structured log/timeline projection |
+| F-015 Notifications | Grokbot F-015 acceptance | UI | NEW operation result and async feedback |
+| F-016 Preview | Grokbot feature deferred P1 | Computers ingress | DEFER pending authenticated port-proxy design |
+| F-017 Usage | inference proxy usage and Grokbot P1 spec | Egress + metrics | VERIFY token/cost estimate, no billing claim |
+
+## Extraction inventory with immutable provenance
+
+- Grokbot reference: [PR #1](https://github.com/brasalabs6/grokbot/pull/1), head `9171b11c7269f6f305e99fd697a4dd885aad5459` at review; pin exact source blob hashes for every ported module before deleting/replacing source. Keep a permanent link to CI staging evidence and regression fixtures.
+- Cloudflare OS legacy PR #2: closed without merge; preserve only typed errors, terminal parsing/test behavior and Container API lessons after reviewing compatibility.
+- Cloudflare OS legacy PR #3: closed without merge; repository sweep snapshot, not a runtime architecture.
+- Hub reference: `src/runtime/acp/acp-client.manager.ts` and `src/runtime/acp/acp-stdio.transport.ts`; port protocol behavior only, not NestJS/Redis/Postgres or generic App Server coupling.
+- Archive Grokbot only after immutable provenance, test fixtures and implementation/source evidence are explicitly preserved. Archive does not mean delete the repository or its PR history.
+
+## Required row evidence fields
+
+```typescript
+type MigrationEvidence = {
+ featureId: `F-${string}`; sourceRepo: string; sourceCommit: string;
+ sourcePaths: string[]; targetPaths: string[]; targetCommit: string|null;
+ contracts: string[]; tests: string[]; stagingRunUrl: string|null;
+ productionRunUrl: string|null;
+ disposition: "MIGRATED"|"ALREADY_COVERED"|"DEFERRED_WITH_REASON"|"OBSOLETE_WITH_REASON"|"BLOCKED_WITH_EVIDENCE";
+ rationale: string;
+};
+```
+
+A status of MIGRATED requires a real target-runtime E2E where applicable, not merely a GitHub commit or matching types. The normative payload and state contracts are specified in [ACP_CONTRACTS_V1.md](./ACP_CONTRACTS_V1.md).
