@@ -218,6 +218,78 @@ Each gatekeeper package contains instructions for how to set it up:
 * [X API](packages/gatekeeper-x/README.md)
 * [ZoomInfo API](packages/gatekeeper-zoominfo/README.md)
 
+## Repository modules and packages
+
+This is the **complete directory inventory** of `packages/`, plus the separately declared `scripts/` pnpm workspace package. The package names come from each directory's `package.json`. A directory with only specs is **not** a running package; a deployable Worker additionally needs its actual Wrangler configuration and bindings. See [ROADMAP.md](ROADMAP.md) for implementation status, especially the Grok-only Phase 1.
+
+**Maintenance rule:** when adding, moving, renaming or deleting a `packages/*` directory (or changing its `package.json` name), update this section in the same PR. Run `pnpm docs:packages:check`; CI rejects missing, stale, duplicate or incorrectly named entries. The checker also fails if the `pnpm-workspace.yaml` directory patterns change until it is updated accordingly.
+
+<!-- package-inventory:start -->
+### Core platform
+
+| Directory | Workspace package name | Responsibility |
+| --- | --- | --- |
+| [`packages/workshop-backend`](packages/workshop-backend/) | `@gadgets/workshop-backend` | Workshop kernel Worker: workspace Durable Objects, agent execution, chat and access control. |
+| [`packages/workshop-frontend`](packages/workshop-frontend/) | `@gadgets/workshop-frontend` | React/Vite Workshop single-page UI; communicates with the kernel through Cap'n Web. |
+| [`packages/workshop-shared`](packages/workshop-shared/) | `@gadgets/workshop-shared` | Shared Cap'n Web RPC contracts and types used by frontend and backend. |
+| [`packages/router`](packages/router/) | `@gadgets/router` | Public origin Worker: frontend assets, backend routes and Gatekeeper routing. |
+
+### Shared libraries and UI
+
+| Directory | Workspace package name | Responsibility |
+| --- | --- | --- |
+| [`packages/bundled-blueprints`](packages/bundled-blueprints/) | `@gadgets/bundled-blueprints` | Blueprint sources and libraries bundled into Workshop deployments; not a standalone Worker. |
+| [`packages/configurator-ui`](packages/configurator-ui/) | `@gadgets/configurator-ui` | Type-level UI helpers for Gatekeeper resource configurators. |
+| [`packages/error-reporting`](packages/error-reporting/) | `@gadgets/error-reporting` | Shared error-reporting event contracts and normalization. |
+| [`packages/gatekeeper-kit`](packages/gatekeeper-kit/) | `@gadgets/gatekeeper-kit` | Reusable Gatekeeper connection, credentials, approval, observation and simulation primitives; library only. |
+| [`packages/mcp-shared`](packages/mcp-shared/) | `@gadgets/mcp-shared` | Shared MCP client, OAuth, tool approval and session implementation for MCP Gatekeepers; library only. |
+| [`packages/observability`](packages/observability/) | `@gadgets/observability` | Worker logging, tracing, metrics and issue-reporting helpers; library only. |
+| [`packages/typed-storage`](packages/typed-storage/) | `@gadgets/typed-storage` | Typed persistence primitives for Cloudflare stateful storage. |
+| [`packages/ui`](packages/ui/) | `@gadgets/ui` | Reusable React UI and shared interaction patterns built on Kumo. |
+
+### Gatekeeper Workers
+
+| Directory | Workspace package name | Responsibility |
+| --- | --- | --- |
+| [`packages/gatekeeper-cloudflare`](packages/gatekeeper-cloudflare/) | `@gadgets/cloudflare-gatekeeper` | Cloudflare account connection, authentication, AI Gateway billing and Workers observability. |
+| [`packages/gatekeeper-confluence`](packages/gatekeeper-confluence/) | `@gadgets/confluence-gatekeeper` | Confluence service integration and scoped resources. |
+| [`packages/gatekeeper-context`](packages/gatekeeper-context/) | `@gadgets/gatekeeper-context` | Context Library: shared and private agent-readable collections and management UI. |
+| [`packages/gatekeeper-email`](packages/gatekeeper-email/) | `@gadgets/email-gatekeeper` | Email-service integration with credential and action controls. |
+| [`packages/gatekeeper-github`](packages/gatekeeper-github/) | `@gadgets/github-gatekeeper` | GitHub repositories, issues, pull requests and approved actions. |
+| [`packages/gatekeeper-gitlab`](packages/gatekeeper-gitlab/) | `@gadgets/gitlab-gatekeeper` | GitLab projects, issues, merge requests and approved actions. |
+| [`packages/gatekeeper-google`](packages/gatekeeper-google/) | `@gadgets/google-gatekeeper` | Google service integrations and scoped resource access. |
+| [`packages/gatekeeper-homeassistant`](packages/gatekeeper-homeassistant/) | `@gadgets/homeassistant-gatekeeper` | Home Assistant resources and device/service actions. |
+| [`packages/gatekeeper-linear`](packages/gatekeeper-linear/) | `@gadgets/linear-gatekeeper` | Linear issue and project integration. |
+| [`packages/gatekeeper-mcp`](packages/gatekeeper-mcp/) | `@gadgets/mcp-gatekeeper` | User-configured MCP server connections (bring-your-own endpoint). |
+| [`packages/gatekeeper-mcp-portal`](packages/gatekeeper-mcp-portal/) | `@gadgets/mcp-portal-gatekeeper` | Administrator-configured MCP portal connections. |
+| [`packages/gatekeeper-notion`](packages/gatekeeper-notion/) | `@gadgets/notion-gatekeeper` | Notion workspace and page integration. |
+| [`packages/gatekeeper-scheduler`](packages/gatekeeper-scheduler/) | `@gadgets/gatekeeper-scheduler` | Scheduled callbacks for workspaces, using an existing ScheduleDriver Durable Object. |
+| [`packages/gatekeeper-slack`](packages/gatekeeper-slack/) | `@gadgets/slack-gatekeeper` | Slack workspace integration and scoped messaging resources. |
+| [`packages/gatekeeper-spotify`](packages/gatekeeper-spotify/) | `@gadgets/spotify-gatekeeper` | Spotify account and media-control integration. |
+| [`packages/gatekeeper-supabase`](packages/gatekeeper-supabase/) | `@gadgets/supabase-gatekeeper` | Supabase service and data integration. |
+| [`packages/gatekeeper-x`](packages/gatekeeper-x/) | `@gadgets/x-gatekeeper` | X account/post resources with API usage limits and controlled actions. |
+| [`packages/gatekeeper-zoominfo`](packages/gatekeeper-zoominfo/) | `@gadgets/zoominfo-gatekeeper` | ZoomInfo service integration. |
+
+### Integration tests and evaluations
+
+| Directory | Workspace package name | Responsibility |
+| --- | --- | --- |
+| [`packages/integration-tests`](packages/integration-tests/) | `@gadgets/integration-tests` | Cross-package integration tests and test helpers. |
+| [`packages/workshop-evals`](packages/workshop-evals/) | `@gadgets/workshop-evals` | Workshop agent evaluations and supporting test harness. |
+
+### Workspace tooling
+
+| Directory | Workspace package name | Responsibility |
+| --- | --- | --- |
+| [`scripts`](scripts/) | `@gadgets/scripts` | Shared Vite+/pnpm build scripts, worker config generation, dev server, and release tooling. |
+
+### Planned, not yet a workspace package
+
+| Directory | Workspace package name | Responsibility |
+| --- | --- | --- |
+| [`packages/agent-runtime`](packages/agent-runtime/) | — | **Specs and plan only.** Grok Container/Sandbox runtime for Phase 1; no `package.json`, Worker, or deployable implementation yet. |
+
+<!-- package-inventory:end -->
 ## Developing
 
 When developing, you'll want to run the front-end and back-end as two separate commands in two terminals:
