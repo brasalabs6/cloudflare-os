@@ -26,3 +26,8 @@ Terminal tickets require expiry, nonce/JTI replay prevention, origin binding, pr
 ## Implementation checklist
 
 Follow the Gatekeeper authoring guide. Define src/types.d.ts and generated src/types.txt before implementation and review the public API first. Use canonical action/approval and observation contracts. Test cross-user/session denial, ticket replay/expiry, stale generation, path traversal, symlink escape, command timeout, output truncation, unauthorized ports and checkpoint integrity.
+
+
+## Authority and terminal boundary
+
+See [ACP_CONTRACTS_V1](../../docs/architecture/ACP_CONTRACTS_V1.md) sections 3 and 7. A terminal PTY with arbitrary input is a privileged human Computer capability; it MUST NOT be treated as a safe command allowlist or inherited from CodingAgents/ACP permission. Enforce short-lived single-use generation-bound ticket claims, nonce consumption, origin/principal/session binding and per-session terminal metadata. Bounded file list/read are observations, while writes and commands are actions requiring reviewed grant/approval. `src/types.d.ts` remains a proposed interface until validated against Cap'n Web and observer/approval requirements.
