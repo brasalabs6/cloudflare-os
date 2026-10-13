@@ -2651,6 +2651,10 @@ function getOrCreateProvisionalToolCall(
   return toolCall;
 }
 
+const GROK_ENGINE_MODEL: AiChatAuthorInfo = {
+  id: "__cloudflare_grok__", type: "agent", name: "Grok Build (Cloudflare Sandbox)"
+};
+
 function ChatInterface({
   workspaceId,
   overseer,
@@ -3356,9 +3360,11 @@ function ChatInterface({
       setSelectedModel(getStoredSelectedModel(availableModels));
     } else {
       // An existing thread takes its active agent's model, else the one that last spoke.
-      setSelectedModel(fallbackToStoredModelSelection(chatAgent?.id ?? null, availableModels));
+      setSelectedModel(currentChatMetadata?.engine === "grok"
+        ? GROK_ENGINE_MODEL.id
+        : fallbackToStoredModelSelection(chatAgent?.id ?? null, availableModels));
     }
-  }, [selectedChatId, availableModels, chatAgent?.id]);
+  }, [selectedChatId, availableModels, chatAgent?.id, currentChatMetadata?.engine]);
 
   // Keep the ref in sync with selectedChatId state
   useEffect(() => {
@@ -3813,9 +3819,11 @@ function ChatInterface({
           bumpChatListVersion();
           setChatListReady(true);
 
-          setAvailableModels(models);
+          const modelsWithGrok = [...models.filter((m) => m.id !== GROK_ENGINE_MODEL.id),
+            GROK_ENGINE_MODEL];
+          setAvailableModels(modelsWithGrok);
 
-          setSelectedModel(getStoredSelectedModel(models));
+          setSelectedModel(getStoredSelectedModel(modelsWithGrok));
 
           forceUpdate();
         }
@@ -4000,19 +4008,26 @@ function ChatInterface({
     try {
       if (selectedChatId === null) {
         // Create a new chat (with optional capsules).
-        const newChatId = await overseer.newChat(
-            message, model, capsules, attachments, formats);
+        const newChatId = model === GROK_ENGINE_MODEL.id
+          ? (typeof message === "string" && !(capsules?.length || attachments?.length)
+              ? await overseer.newGrokChat(message)
+              : (() => { throw new Error("Grok phase 1 supports text-only prompts"); })())
+          : await overseer.newChat(message, model, capsules, attachments, formats);
         onNavigateToChatRef.current(newChatId);
       } else {
         // Send message to existing chat.
-        await overseer.sendChatMessage(
-          selectedChatId,
-          message,
-          model,
-          capsules || undefined,
-          attachments || undefined,
-          formats,
-        );
+        if (currentChatMetadata?.engine === "grok") {
+          if (typeof message !== "string" || capsules?.length || attachments?.length) {
+            throw new Error("Grok phase 1 supports text-only prompts");
+          }
+          await overseer.sendGrokMessage(selectedChatId, message);
+        } else if (model === GROK_ENGINE_MODEL.id) {
+          throw new Error("Create a new Grok conversation to switch engines");
+        } else {
+          await overseer.sendChatMessage(
+            selectedChatId, message, model, capsules || undefined,
+            attachments || undefined, formats);
+        }
       }
     } catch (err) {
       if (!logRpcFailure("Failed to send message:", err, { reportSite: "chat.send" })) {
@@ -4038,8 +4053,11 @@ function ChatInterface({
     if (!message && (!attachments || attachments.length === 0)) return;
     const model = modelId !== undefined ? modelId : selectedModel;
     try {
-      const newChatId = await overseer.newChat(
-          message, model, capsules, attachments, formats);
+      const newChatId = model === GROK_ENGINE_MODEL.id
+        ? (typeof message === "string" && !(capsules?.length || attachments?.length)
+            ? await overseer.newGrokChat(message)
+            : (() => { throw new Error("Grok phase 1 supports text-only prompts"); })())
+        : await overseer.newChat(message, model, capsules, attachments, formats);
       onNavigateToChatRef.current(newChatId);
     } catch (err) {
       if (!logRpcFailure("Failed to create new chat:", err, { reportSite: "chat.new" })) {
@@ -4055,6 +4073,10 @@ function ChatInterface({
 
   // Handle model change
   const handleModelChange = (modelId: string | null) => {
+    if (currentChatMetadata?.engine === "grok" && modelId !== GROK_ENGINE_MODEL.id) {
+      toasts.add({ title: "Grok conversations use Grok Build", variant: "error" });
+      return;
+    }
     setSelectedModel(modelId);
     persistSelectedModel(modelId);
   };
