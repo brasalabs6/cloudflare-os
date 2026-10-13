@@ -3357,12 +3357,14 @@ function ChatInterface({
   // Update selected model when switching chats
   useEffect(() => {
     if (selectedChatId === null) {
-      setSelectedModel(getStoredSelectedModel(availableModels));
+      setSelectedModel(getStoredSelectedModel(
+        availableModels.filter(model => model.id !== GROK_ENGINE_MODEL.id)));
     } else {
       // An existing thread takes its active agent's model, else the one that last spoke.
       setSelectedModel(currentChatMetadata?.engine === "grok"
         ? GROK_ENGINE_MODEL.id
-        : fallbackToStoredModelSelection(chatAgent?.id ?? null, availableModels));
+        : fallbackToStoredModelSelection(chatAgent?.id ?? null,
+            availableModels.filter(model => model.id !== GROK_ENGINE_MODEL.id)));
     }
   }, [selectedChatId, availableModels, chatAgent?.id, currentChatMetadata?.engine]);
 
@@ -3823,7 +3825,9 @@ function ChatInterface({
             GROK_ENGINE_MODEL];
           setAvailableModels(modelsWithGrok);
 
-          setSelectedModel(getStoredSelectedModel(modelsWithGrok));
+          // Adding Grok as an opt-in engine must not change a native model
+          // default (including deployments with no enabled native models).
+          setSelectedModel(getStoredSelectedModel(models));
 
           forceUpdate();
         }
