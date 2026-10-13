@@ -58,3 +58,12 @@ packages/mcp-shared/
 - [ ] Registrar evidência source→target→tests na [matriz](../../docs/architecture/ACP_MIGRATION_MATRIX.md) e no [user ledger](../../docs/architecture/USER_INPUT_LEDGER.md), distinguindo o que só foi planejado.
 
 **DoD:** todas etapas relevantes com testes e evidência; nenhuma API pública/MCP nova sem autorização e revisão de contrato.
+
+
+## Integration corrective decision — source audit 2026-10-13
+
+Reference: [Existing module boundary audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md); root SPECS §23 takes precedence. **Confirmed current authority:** This is the only shared MCP *client* OAuth/transport/catalog/trust classifier used by BYO and Portal Gatekeepers. It is not a generic MCP *server* implementation. Existing tools.ts readOnlyHint behavior and vetted auto-approval restrictions must remain exactly as tested.
+
+**Required next implementation checkpoint:** Integrate mcp-shared catalog with agent-tool-registry as read-only projection with current per-tool policy revision; never reimplement classifyTool. Verify existing BYO/portal owner-only sharing and staged write paths on new ACC/tool gateway consumption.
+
+Do not change the existing implementation solely because a draft package exists. Preserve current tests, RPC and storage compatibility; any new state machine needs explicit idempotency, observer/action semantics, crash recovery and rollback acceptance. New agent-platform modules are not deployed.

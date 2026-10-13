@@ -415,3 +415,12 @@ Do not add a second browser transport. Extend existing Cap'n Web AuthenticatedAp
 ### Definition of done
 
 Source→target traceability, schema fixtures, existing test parity and new negative boundary tests, authenticated staging proof for new cross-worker behavior and migration-aware rollback. **Detailed steps:** [plan.md](./plan.md).
+
+
+## Integration corrective decision — source audit 2026-10-13
+
+Reference: [Existing module boundary audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md); root SPECS §23 takes precedence. **Confirmed current authority:** The authoritative browser/Gadget Cap'n Web ABI and Gatekeeper types remain here, while agent-protocol supplies internal ACC schemas. No shadow generated RPC types or JSON replacement for native Worker capability references.
+
+**Required next implementation checkpoint:** Review minimal additive public types with JSDoc and Cap'n Web constraints; distinguish workspace/chat/task/CLI IDs and envelope version; test legacy AgentSpawnerConfig and current observer API compatibility.
+
+Do not change the existing implementation solely because a draft package exists. Preserve current tests, RPC and storage compatibility; any new state machine needs explicit idempotency, observer/action semantics, crash recovery and rollback acceptance. New agent-platform modules are not deployed.

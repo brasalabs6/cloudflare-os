@@ -222,3 +222,12 @@ Use existing ScheduleDriver for calendar/elapsed-time triggers, with explicit ho
 ### Definition of done
 
 Source→target traceability, schema fixtures, existing test parity and new negative boundary tests, authenticated staging proof for new cross-worker behavior and migration-aware rollback. **Detailed steps:** [plan.md](./plan.md).
+
+
+## Integration corrective decision — source audit 2026-10-13
+
+Reference: [Existing module boundary audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md); root SPECS §23 takes precedence. **Confirmed current authority:** ScheduleDriver owns all elapsed/calendar/once recurrence, HookController approval, account-wide alarm, stable runId, retries/DST. Agent Task DO is NOT a scheduler; only accepts deduped runId-triggered jobs and independently controls continuation of already accepted Task.
+
+**Required next implementation checkpoint:** Prototype approved persistent callback linkage without rewriting ScheduleDriver; registration itself is NOT idempotent; task admission must be scheduleId:runId idempotent. Test duplicate delivery, disabled hook, revoke, timezone DST and interaction with task cancellation.
+
+Do not change the existing implementation solely because a draft package exists. Preserve current tests, RPC and storage compatibility; any new state machine needs explicit idempotency, observer/action semantics, crash recovery and rollback acceptance. New agent-platform modules are not deployed.
