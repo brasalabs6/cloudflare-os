@@ -183,3 +183,19 @@ A gente tem que remover esses módulos que estão sendo adicionados, que substit
 **Pendências concretas:** implementar Worker/DO/Container, cliente ACP, egress de modelo com segredos no Worker, adaptação do Overseer/ChatInterface e executar testes reais de staging. Grokbot ainda não arquivado; preserva referência de destilação.
 
 **Evidência:** commit desta simplificação; verificações de paths após publicação devem confirmar as remoções. Status de aceite Fase 1: NÃO INICIADA.
+
+
+## U-010 — Adapt AGENTS.md from external engineering Gist (2026-10-13)
+
+**Origem: solicitação literal do usuário.**
+
+```text
+leia essa gist [https://gist.github.com/nonexphere/1c1f1105e466326373aee9dd90b838eb](https://gist.github.com/nonexphere/1c1f1105e466326373aee9dd90b838eb)
+
+atualize o AGENTS.md do brasalabs6/cloudflare-os apartir desse AGENTS.md do gist, mas alinhado para o repo cloudflare-os;
+faça isso em um PR
+```
+
+**Mudança:** acrescentadas diretrizes adaptadas do Gist no topo do `AGENTS.md`, preservando as instruções específicas já existentes; regras de descoberta, escopo, compatibilidade, ownership, contratos inter-repositórios, segurança, TDD, geração de artefatos e relatório final foram alinhadas ao código e ao `ROADMAP.md` atual. Sem mudanças de runtime, packages ou contratos.
+
+**Validação:** revisão documental dos arquivos `AGENTS.md`, `README.md`, `ROADMAP.md`, `package.json` e `pnpm-workspace.yaml` e da lista de packages. Sem execução de testes ou deploy por ser uma alteração exclusivamente documental. Referência externa: https://gist.github.com/nonexphere/1c1f1105e466326373aee9dd90b838eb. Evidência: PR desta alteração; o merge ainda depende de revisão.
