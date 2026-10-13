@@ -1,93 +1,67 @@
-# Multiagent MCP — Implementation plan, traceability and release gates
+# Multiagent MCP — corrected integration and test plan
 
-**Status:** planning and proposed acceptance contract; docs-only PR, no runtime implementation. **Date:** 2026-10-13.
-**Requirements source:** uploaded `multiagent-mcp-mvp-docs.zip` (`pdr.md` / `specs.md`, 2026-10-13). See [domain contracts](./MULTIAGENT_MCP_CONTRACTS_V1.md), [architecture](./MULTIAGENT_MCP_PLATFORM.md) and [security](./MULTIAGENT_MCP_SECURITY.md).
+**Status:** proposed, NOT implemented. **Baseline:** main `9ad57f6`, 2026-10-13.
+**Inputs:** attached `multiagent-mcp-mvp-docs.zip`, PDR F01–F16 / AC01–AC18. **Precedence:** root `SPECS.md`, [Unified v2](./AGENT_PLATFORM_UNIFIED_V2.md), existing package `SPECS.md`, [ACC](../../packages/agent-protocol/SPECS.md), [ACP](./ACP_CONTRACTS_V1.md). See [code-based inventory](./MULTIAGENT_RESPONSIBILITY_AUDIT.md) and [corrected contracts](./MULTIAGENT_MCP_CONTRACTS_V1.md).
 
-## 1. Intent and scope adjustment
+## 1. Change from earlier design
 
-The original MVP selected Next.js, PostgreSQL and a separate long-lived Node worker; its coordination boundary expressly excludes waking disconnected external agents. **Adaptation:** preserve PDR behavior and IDs but implement inside existing Cloudflare OS Workshop (React/Vite, RPC, capability grants), domain DO owners and one new MCP server gateway. Managed ACP execution remains a **parallel, independently staged** feature based on existing [ACP architecture](./ACP_AGENT_PLATFORM.md); do not mark an ACP requirement as delivered by this docs PR or use MCP transport to imply remote execution.
+The original PR #4 proposed a new `agent-directory`, `agent-goals-tasks`, `agent-automation`, `agent-audit`, `mcp-domain-gateway` and parallel Agent UI feature. **All six are now withdrawn**: the checked-in Unified v2 architecture already assigns those authorities to `agent-control-plane`, `agent-loop`, `agent-protocol`, `agent-tool-registry`, `agent-tool-gateway` and the existing Agent Sessions frontend. The remaining domains are bounded **Mailbox** and possibly **workspace structured Memory/Learning** with a Context reuse gate.
 
-Core work may be deployed independently after contracts mature. The platform MUST NOT create a second Workshop kernel, authentication database, Gatekeeper approval queue or authoritative ACP run store.
+## 2. Requirement-by-requirement acceptance and owner
 
-## 2. PDR feature-to-owner matrix
-
-| Requirement | Ownership/reuse | Proposed package/doc |
+| PDR | Existing owner/implementation | Required extension / verification |
 |---|---|---|
-| F01 human auth | **Reuse** Workshop auth/sessions | `workshop-backend` / `workshop-shared` |
-| F02 workspace membership | **Reuse** Workshop Overseer/user DO | `workshop-backend` |
-| F03 agent registration, grants, presence | **New** stable directory; Workshop is grant root | `agent-directory` |
-| F04 remote MCP tools/resources | **New** server facade (not existing client Gatekeepers) | `mcp-domain-gateway` |
-| F05 goals/projects | **New**, colocated task authority | `agent-goals-tasks` |
-| F06 tasks, DAG, claim and lease | **New**, single Tasks DO transaction authority | `agent-goals-tasks` |
-| F07 delegation | **New** task assign + outbox + mailbox consume | `agent-goals-tasks` / `agent-mailbox` |
-| F08 channels, DMs, offline inbox | **New** transactional mailbox | `agent-mailbox` |
-| F09 memory/provenance/revisions | **New**, integrate existing Context only via contracts | `agent-memory` / `gatekeeper-context` |
-| F10 learning proposals/review | **New**, human review and audit | `agent-memory` |
-| F11 continuity/recovery of logical context | **New** projection, not ACP checkpoint | `agent-continuity` |
-| F12 activity/audit | **New** redacted domain event projection; reuse observability | `agent-audit` |
-| F13 approvals | **Reuse** canonical Workshop/Gatekeeper/ACP approval scopes; add domain review model | `workshop-shared`, `gatekeeper-kit`, domain modules |
-| F14 web UI | **New** feature in existing Workshop | `workshop-frontend/src/features/multiagent` |
-| F15 recovery/claims/outbox/idempotency | **New** per-module contract + existing runtime recovery (when available) | `agent-goals-tasks` / `agent-audit` / ACP specs |
-| F16 operating/backup/diagnostics | **Reuse** Workers tooling + **new** module runbooks/tests | `observability`, `integration-tests`, owning modules |
+| F01 auth / F02 workspace | IMPLEMENTED Workshop User/Overseer/sharing | external MCP grants must resolve through authenticated Workshop, no new auth DB; AC01, AC03 |
+| F03 agent registry | SPECIFIED `agent-control-plane` AgentDefinition | workspace-linked external identity/presence/credential rotation; AC02, AC03 |
+| F04 remote MCP | SPECIFIED `agent-tool-gateway` + Registry, IMPLEMENTED MCP import separate | server export/oauth/conformance; AC18 |
+| F05 goals/projects | EXTEND Control Plane | Goal/Project Workboard records; AC04 |
+| F06 tasks/DAG/leases | EXTEND Control Plane | **WorkItem**, not execution `Task`; DAG and fenced business claim; AC05, AC06 |
+| F07 delegation | EXTEND Control Plane + Mailbox | WorkItem assignment outbox -> offline notice; AC04/AC07 |
+| F08 channels/DM/ack | NEW `agent-mailbox` | no alias to chat/ExternalMessageGateway; AC08 |
+| F09 workspace facts | NEW candidate `agent-memory` (reuse Context discovery/search) | scoped structured assertion/revision, no new docs/skills; AC09 |
+| F10 learning | EXTEND candidate `agent-memory` | human reviewed promotion, never agent self-approve; AC10 |
+| F11 continuity | EXTEND Control Plane ACC projection | versioned handoff with source cursor, Overseer compaction unchanged; AC11 |
+| F12 activity | EXTEND ACC projection; IMPLEMENTED observability/action audit | authorized event.list, redaction; AC16 |
+| F13 approval | IMPLEMENTED Gatekeeper action / ACP permission specs; ADD WorkItem review | separate namespaces; AC13 |
+| F14 UI | EXTEND EXISTING `features/agent-sessions` | workboard, inbox, learning, continuity, ACL; AC12/AC17 |
+| F15 recovery | owner-local DO/outbox, existing Scheduler/Overseer, ACP runtime specs | fault injection/idempotency/fencing, restore; AC14 |
+| F16 operation | existing Observability + package-local runbooks/tests | metrics/health/backup drills; AC15/AC16 |
 
-Later extensions E01/E02/E07 (universal runner, remote trigger, recursive autonomous spawning) are NOT part of the initial external MCP coordination acceptance; implement **only** after runtime/security/automation gates. Later E03/E04/E10/E11/E12 remain optional with independent review.
+This is a *mapping to owners*, not proof a feature is implemented. Source v2 packages are spec-only until code, schemas, tests and production deployment are verified.
 
-## 3. Acceptance (source AC01–AC18)
+## 3. Sequenced implementation PRs (not new parallel services)
 
-| AC | Gate / target evidence |
-|---|---|
-| AC01 | A/B workspaces isolated across UI, MCP, RPC and owner storage; T01/T02 |
-| AC02 | 3 independently identified MCP agents; `whoami` / TTL presence; T03 |
-| AC03 | auth, OAuth consent, expiry/revoke immediate denial; T04/T05 |
-| AC04 | offline B sees assigned task and mailbox on reconnect, no execution claim; T06/T30 |
-| AC05 | simultaneous claim yields one lease; stale/expired epoch denied; T07/T08 |
-| AC06 | dependency blockage and cycle error; T09/T10 |
-| AC07 | reassignment and independent review, no self-review; T11/T11b/T12 |
-| AC08 | direct DM + channels with per-channel order/receipts, idempotency; T13/T13b/T14/T26 |
-| AC09 | memory revision, search, archive + audit; T15 |
-| AC10 | proposed learning requires authorized decision; T16 |
-| AC11 | continuity reconstruction from new client + canonical task/inbox reads; T17 |
-| AC12 | responsive keyboard-only flows and mobile operation; T18 |
-| AC13 | sensitive approval bound to target hash/version and acting principal; T19 |
-| AC14 | crash at commit/ack, retry without duplicate mutation, same key changed body fails; T20/T27 |
-| AC15 | authorized structured export + isolated integrity-verified restore, deny unauthorized export; T21/T21b |
-| AC16 | log redaction and critical action actor/correlation metadata; T22 |
-| AC17 | registered not online; persisted message not necessarily acted upon; T23/T30 |
-| AC18 | pinned 2026-07-28 protocol conformance and explicitly supported/tested 2025 client; T24/T25 |
+1. **G0 Architecture review (this PR):** evidence inventory, task type split, scope/authority matrix, initial workboard/mailbox/memory contract; no source code changes. Do not approve implementation of a new data store before authorization review.
+2. **G1 ACC and Control Plane contracts:** implement/validate existing `agent-protocol`/`agent-control-plane` work: source-to-event mapping, AgentDefinition/Task/Execution schema, migration and service bindings; preserve native Overseer and ACP semantics. Tests for schema versioning, cross-workspace grants, execution unknown outcomes, restart.
+3. **G2 Workboard inside Control Plane:** `Goal`/`WorkItem`/DAG/claim/review, optional Project, source-to-execution correlation. No second AgentDefinition or generic execution Task. Tests T07–T12, AC05–AC07, cycle + lease-race + self-review.
+4. **G3 Mailbox only:** independent recipient/channel DO if existing chat cannot meet ordering/offline receipts. Control Plane outbox integration with consumer dedupe; notification templates via existing Workshop service only. T13/T14/T20/T26/T27, AC04/AC08/AC14.
+5. **G4 Structured memory decision:** prove Context Gatekeeper ACL and management API cannot safely supply workspace facts; prefer a Context extension if compatible; otherwise bounded `agent-memory` structured ledger, human learning review, source refs. T15/T16, AC09/AC10.
+6. **G5 Continuity projection:** implement in Control Plane from ACC source cursor, not separate DO/task authority. T17, AC11.
+7. **G6 Registry and MCP Gateway:** implement `agent-tool-registry` manifests and `agent-tool-gateway` auth/versioned tools/resources; all PDR public tools route to same owner RPC as UI/native code. T03–T05/T24/T25, AC02/AC03/AC18.
+8. **G7 One Workshop UI:** extend current Agent Sessions and approved action UI. Keyboard/mobile end-to-end, errors/reconnect/offline statuses; T18/T23/T30, AC12/AC17.
+9. **G8 Optional managed autonomy:** fulfill existing ACP runtime, native adapter, agent-loop and Scheduler plans; real Grok/Codex/OpenCode E2E, budgets, stop, subagents, immutable releases and rollback. This is a separate release from PDR's external MCP coordination MVP.
 
-These are **acceptance targets**, not passing test evidence. Preserve original source tests T01–T30 in an implementation test plan. The PDR targets (5 workspaces / 25 agents / 1,000 tasks / 20,000 messages; mobile WCAG 2.2 AA goal) are performance/accessibility validation targets, not observed production measurements.
+Check source AC01–AC18 and T01–T30 for every gate. The attached PDR's performance/a11y numbers remain **targets**, not measured results.
 
-## 4. Sequenced deliverables / PR boundaries
+## 4. Package change matrix
 
-| Gate | Delivery | Prerequisite/acceptance |
+| Existing package | Proposed additions (NOT yet code) | Forbidden changes |
 |---|---|---|
-| G0 — Docs/contract approval | ADRs 0004/0005; proposed schemas, API/catalog, risks, traceability | Reviewer agrees ownership and naming; **this PR only** |
-| G1 — Auth + directory | identity mapping, auth audience/revoke, `agent.whoami`, strict workspace scope | AC01–AC03 auth suites |
-| G2 — Task core | Goals/Tasks DO, CAS/idempotency, DAG cycle checks, leases/review | AC05–AC07; fault injection |
-| G3 — Mailbox/outbox | Mailbox DO, DM/channel/ack, durable producer/consumer | AC04/AC08/AC14; crash-after-commit test |
-| G4 — Memory/learning/continuity | revision/provenance, review, source cursors | AC09–AC11 |
-| G5 — MCP server interoperability | single gateway, schemas/tool/resource discovery, OAuth, 2026 and compatible 2025 client | AC02/AC03/AC18 with at least two distinct MCP hosts |
-| G6 — Workshop UI + ops | dashboard, task DAG, inbox, review, continuity, audit, metrics/backup | AC12/AC15–AC17 and mobile/browser E2E |
-| G7 — Managed autonomy (separate release) | ACP runtime + Gatekeepers + Scheduler adapter + automation DO/loop policies | Real Grok/Codex/OpenCode ACP E2E, stop/reconcile, budgets/kill switch, restore/rollback |
+| `agent-control-plane` | `src/workboard/*` Goal/WorkItem, review, lease, correlation; `src/continuity/*` projection; outbox consumers | parallel Agent Registry, second execution Task/Loop scheduler |
+| `agent-protocol` | ACC event type/source mapping for workboard/mailbox/facts; tool schema aliases | a second global DomainEvent protocol |
+| `agent-tool-registry` | PDR tool manifests/schema/scope classification, map `task.*` to WorkItem | duplicate domain MCP registry |
+| `agent-tool-gateway` | HTTP/MCP projection for workboard/mailbox/memory + OAuth conformance | new standalone domain gateway |
+| `gatekeeper-context` | audited Context evidence link and reuse decision (no implicit write) | agent-writable Context docs/skills bypassing management |
+| `agent-loop`, `gatekeeper-scheduler` | integrate approved task admission only | second cron/restart loop |
+| `workshop-backend` | narrow binding to Control Plane + notifications integration only if needed | replacing existing pi loop/Overseer chat/actions |
+| `workshop-frontend/src/features/agent-sessions` | add Workboard/mailbox/learning views | second agents dashboard/router identity |
+| `agent-mailbox` (new) | only offline channels/receipts | external-message gateway/chat clone |
+| `agent-memory` (conditional new) | only workspace facts/learning revision | ContextDocument/skills/search replacement |
 
-G1–G5 MAY be developed in smaller independently reviewed PRs; avoid broad changes to `workshop-backend` and `workshop-shared`. Implement per-package `SPECS.md` before its code. Every G gate requires code, schema/migrations, tests and staging evidence to claim completion. No feature is DONE just because it is documented or an HTTP route returns 200.
+## 5. Definition of done
 
-## 5. Deployment, observability and migration rules
+For each implementation gate require (a) source commit pinned and code paths, (b) schema + migrations + ABI, (c) unit, DO concurrency and security negative tests, (d) staging RPC/MCP-native parity, (e) live deployment/restore/revoke evidence when relevant, (f) audit/telemetry redaction, (g) rollback and old-session compatibility. Mark `ALREADY_COVERED` only with code/test evidence, not a speculative spec.
 
-- Follow repository's existing pnpm/Wrangler/release manifests and service-binding discovery. Proposed `packages/*/SPECS.md` directories do not imply deployability. Separate Worker requires explicit `wrangler.jsonc`, bindings, environment/secrets, rollout and tests.
-- Reuse Workshop identity/grants and existing Scheduler's bind-before-enable approved hooks. No Postgres table migration or separate Next.js app is proposed.
-- Produce a deployment-specific data-retention table, quotas, DO SQLite migrations, R2 export/checksums, restore drill, alarm/job recovery and observability dashboards before public access.
-- Existing ACP specs/ADRs 0001–0003 must remain authoritative on harnesses, egress and permission boundaries. Coordinate any ACP-specific changes via `ACP_MIGRATION_MATRIX.md` rather than quietly copying GrokBot source into domain services.
-- Record tests by commit + environment (unit, DO concurrency, integration, browser, staging real runtime, production smoke). Do not mark green from a mock alone.
+## 6. Review decisions still open
 
-## 6. Open review decisions (not hidden assumptions)
-
-1. Directory issuance/credential lifecycle: reuse or extend Workshop account identity; exact OAuth issuer/audience/client registration strategy.
-2. DO topology: workspace-keyed Tasks authority; Mailbox partition strategy for channel ordering and per-recipient inbox; memory/continuity package co-deploy vs separate Worker.
-3. Outbox retry, dead-letter, consumer dedupe and event retention windows under actual Cloudflare limits.
-4. Exact JSON Schema, tool argument casing, MCP version/header fixtures and portable skills/resources catalog.
-5. Risk classification for Task review vs Gatekeeper action vs ACP tool approval; delegated reviewer policies.
-6. Budget units/kill-switch responsibility and stale/ambiguous ACP run outcome reconciliation for managed autonomy.
-7. Backup/export encryption, checksums, retention and SLO targets based on staging measurements.
-
-Owners should resolve these before turning provisional contracts into deployable code, not claim they have been answered by this document.
+Identity/credential issuer vs Workspace auth; split WorkItem vs Execution Task and allowed states; Mailbox sharding/per-channel ordering; Context vs workspace memory storage choice; metadata/provenance security; ACC projection replay/retention; MCP protocol version and host OAuth; task review policy separate from external actions; deployment and binding generation. These are explicit review gates, not silently assumed implementation choices.

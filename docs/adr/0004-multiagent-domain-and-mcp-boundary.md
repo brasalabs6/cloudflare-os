@@ -1,22 +1,22 @@
-# ADR 0004 — Multiagent domain service with MCP server facade
+# ADR 0004 — Extend Unified Agent Platform v2, do not create parallel domain owners
 
-**Status:** Proposed for review; not implemented. **Date:** 2026-10-13.
+**Status:** Proposed for review; no implementation. **Date:** 2026-10-13. **Supersedes:** the first draft of this ADR in PR #4.
 
 ## Context
 
-The supplied multiagent MVP assumed an independent Next.js/PostgreSQL control plane and no built-in executor. Cloudflare OS already owns Workshop identities/workspaces and has a capability-oriented API, existing MCP *client* Gatekeepers, a Scheduler and a separate, specified ACP runtime. Building a second app and actor database would duplicate authority.
+A prior proposal treated coordination as a separate set of eight agent-domain modules. Repository source review showed an existing, newer [Unified v2 spec](../architecture/AGENT_PLATFORM_UNIFIED_V2.md): `agent-control-plane` already owns AgentDefinition, execution Task, Trigger, lineage and budgets; `agent-loop` owns continuation; `agent-protocol` owns ACC event language; `agent-tool-registry` and `agent-tool-gateway` own discovery and authenticated MCP/HTTP export. Workshop has the native pi-agent-core/Overseer engine, Scheduler, Gatekeeper approval/auth and MCP-import connectors.
 
 ## Decision
 
-Add independent domain packages for directory, tasks/goals, mailbox, memory/learning, continuity, audit and automation. Create a separately authenticated **MCP server** gateway exposing the same services that internal Cap'n Web RPC clients use. The gateway owns transport and catalog, never business state/permission grants. Keep ACP as process-level harness protocol and the agent-runtime Session DO authoritative for execution. Use existing Gatekeepers for protected remote resources, without turning the MCP server facade into a global unrestricted Gatekeeper.
+Treat the PDR as **new capabilities within the already proposed owner topology**. Add Goal/WorkItem DAG/claim/review and logical continuity under `agent-control-plane`. Keep its existing `Task` for execution, introducing a separate `WorkItem` rather than silently changing execution semantics. Use `agent-tool-gateway` (not `mcp-domain-gateway`) as the one MCP server. Keep existing Agent Sessions UI as one agent-management surface. New Mailbox is permitted only for offline agent↔agent channels/receipts not served by Overseer chats; structured workspace Memory/Learning is conditional on a verified Context Gatekeeper ACL/storage gap.
 
-External clients get durable coordination only; an offline client is never assumed to be awakened by assignment. Managed execution is an explicit, later integration dependent on the ACP runtime and approved Coding Agents capability. The MVP supports coordination without that executor.
+## Alternatives rejected
+
+- Duplicating Agent Directory, Task/Goal manager, Agent Automation, Audit stream or MCP exporter in new Workers.
+- Treating existing native pi-agent-core as ACP, or ACP run results as approved WorkItem reviews.
+- Storing WorkItem state directly in Overseer chat history, or using the existing ExternalMessageGateway as arbitrary client auth.
+- Replacing Context docs/skills with an independently searchable document platform.
 
 ## Consequences
 
-- One set of domain policies for MCP, UI and Code Mode callers; more contract/conformance testing.
-- No changes to legacy MCP client connector endpoint trust policy.
-- No alternate account/login/workspace membership source or PostgreSQL sidecar.
-- Workspace-scoped, narrow capabilities; no credential/authorization inheritance from tool names.
-- Define versioned domain schemas, scope catalog and client-version matrix before implementation.
-- Contract precedence: root `SPECS.md`, new package specs, executable TypeScript/JSON schemas. See `../architecture/MULTIAGENT_MCP_PLATFORM.md`.
+Fewer new authorities/deployments, but ACC/Control Plane/Tool Gateway must be implemented and have explicit ABI versioning before coordination is usable. PDR `task.*` MCP surface is a WorkItem alias only. Existing Gatekeeper/Scheduler/runtime audits and permission models remain authoritative. See [review audit](../architecture/MULTIAGENT_RESPONSIBILITY_AUDIT.md) and [delta contracts](../architecture/MULTIAGENT_MCP_CONTRACTS_V1.md).

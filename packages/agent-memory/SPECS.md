@@ -1,28 +1,26 @@
-# Agent Memory and Learning — SPECS
+# Workspace structured facts and learning — limited new capability
 
-**Kind:** proposed workspace-scoped domain package; implementation pending.
-**Traceability:** F09–F10, provenance, knowledge review.
+**Status:** PROVISIONAL spec; no code; must pass the Context-reuse design gate before separate storage is approved.
+**Related implementation:** `gatekeeper-context` already owns documents/skills, account-private/domain-public collections, search and management writes. Its existing agent API is read-oriented.
 
-## Mission and boundaries
+## Why this may be different
 
-Own structured, revisioned **multiagent workspace memory** and explicit learning proposals. This does not replace `gatekeeper-context`, which already provides context documents and skill collections; any Context Library integration is read/approved-write through its existing capabilities, never direct storage writes. Memory/learning claims are not system or developer instructions. Knowledge returned to agents must be marked as untrusted attributed content.
+The PDR requires **workspace ACL-scoped**, structured, attributed fact revisions, source provenance, per-agent optional subject, and *human-reviewed* learning proposals. Existing Context collections use account-private or domain-public visibility, not automatically a Workspace audience. Storing an agent's shared work memory inside an account-private Context collection would incorrectly hide it from collaborators; storing it in a domain-public collection could leak it across workspaces. Do not bypass the Context observer contract or assume all documents are safe to publish.
 
-## Tool/API surface
+**Decision gate:** before building `agent-memory`, test whether a reviewed extension of `gatekeeper-context` can introduce the required workspace-granular visibility and versioned fact/review contract without breaking private/public ownership or existing agent read semantics. If it can, implement there and **delete this package proposal**. Independent storage is allowed only after evidence that this would dangerously entangle Context sharing/management.
 
-Read: `memory.search` (bounded textual query + filters + cursor), `memory.get` (current revision/provenance), `learning.list` (authorized review queue).
-Write: `memory.create` (kind, scope, body, refs, key), `memory.revise` (expectedRevision, patch, provenance), `learning.propose` (statement, source refs, confidence, key).
+## Scope / explicit non-ownership
 
-Learning review `learning.review` is a **human-authorized Workshop operation in v1**, not a broadly agent-callable tool. Approval may promote a proposal to a new memory revision with explicit linkage and provenance. It must not silently rewrite an existing memory or publish an instruction. Rejection retains audit history.
+Own **WorkspaceFact/FactRevision**, `LearningProposal` and a structured evidence/source-reference index, scoped to verified Workshop workspace, only if reuse gate fails. Does NOT own ContextDocument, SKILL.md, general-purpose full-text document search, Context collections, native chat compaction, ACC events or Control Plane continuity. Results are untrusted attributed content, never privileged system instructions.
 
-## Data model and invariants
+Candidate public tools: `memory.search` (`WorkspaceFact` and optional separate Context authorized resource projection), `memory.get`, `memory.create`, `memory.revise`, `learning.propose`, `learning.list`. `learning.review` and trusted publication are human-only, using existing authenticated Workshop approval/governance path. Never create a new general approval queue.
 
-`Memory {memoryId,workspaceId,scope,category,body,provenanceRefs[],status,revision,createdBy,updatedAt}` and append-only `MemoryRevision` with author/source/diff. `LearningProposal {learningId,workspaceId,statement,sourceRefs[],confidence,status,reviewedBy?,revision}`. Scope is at least `workspace` or `agent`; optional project-specific selection needs explicit policy and tested index. No implicit cross-workspace sharing.
+## Storage and authorization
 
-- Mutable memory uses compare-and-set `expectedRevision`; archival/superseding does not erase audit.
-- A learning is PROPOSED until reviewed; a self-review, ungrounded evidence or arbitrary high confidence score does not grant trusted status.
-- Semantic/vector search is optional P1; MVP must implement explainable indexed text search and authorization per result.
-- Preserve references to source event/task/artifact and sensitivity metadata; avoid copying secrets, full private conversations or unapproved data into a wider scope.
+Workspace-scoped fact revisions have monotonic versions, bounded tags, sourceRefs and creator, optional agent subject; compare-and-set edits, archive/revisions rather than hard overwrite. Learning starts PROPOSED and cannot become trusted without distinct human review. Context documents may be referenced or fetched through existing observation-authorized session; no raw storage access, secret copies or automatic widening of Context scopes. A promoted fact stays within its approved sharing scope.
 
-## Security and acceptance
+Events are translated into existing ACC; privacy-safe operational metrics use Observability. The fact store, if implemented, owns a local idempotency/outbox for its own writes, not a second audit stream.
 
-Every returned memory body is a protected observation. Updates require `memory:write` on that exact scope. Workspace owner/reviewer policy is checked server-side. Test revision races, version history, no secret exposure in audit, self-approval denial, missing source, malicious Markdown/prompt injection in memory, workspace/agent scope isolation, search pagination and revocation visibility.
+## Required tests
+
+Proof of Context reuse decision, tenant isolation for every read/page/resource, per-agent scope, revoke, version conflict, proposed learning not trusted until review, no self-approval or unsafe auto-promotion, private Context reference not readable by others, malicious prompt-injection text marked untrusted, restore and provenance integrity. AC09–AC10 / T15–T16.

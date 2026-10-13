@@ -188,3 +188,13 @@ IMPORTANT: Frontend error reporting is a separate, opt-in path:
 - Install automatic capture only in trusted first-party surfaces, never gadget/user-authored code.
   Exception messages and stacks reach the external Reporter, so never intentionally put secrets,
   prompts, tokens, headers, or request/response bodies in thrown errors or report metadata.
+
+
+## Agent platform user requirement ledger (2026-10-13)
+
+The canonical **verbatim user intent + implementation evidence** record for work on this platform is `docs/architecture/USER_INPUT_LEDGER.md`. During every future interactive request that changes this repository, append the user's available exact input and an explicitly dated explanation of what was changed, deferred, tested and deployed, with commit/test links. Preserve previous quoted inputs; never fabricate missing user messages or silently claim a plan is implemented. The repository is public: never commit credential/private secrets just to preserve an exact request; redact and label omissions. This is a contributor workflow rule, **not an unattended agent** with access to future chat messages. Architecture baseline: `docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md`; existing native pi-agent-core, ScheduleDriver and MCP Gatekeepers must not be duplicated.
+
+
+## Agent platform implementation guard: existing module ownership
+
+Before implementing or modifying an agent-platform `packages/agent-*` or `packages/gatekeeper-{coding-agents,computers}`, read `docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md` and root `SPECS.md` §23. The 15 new directories contain only specs/plans; do not call them functional packages. Classify each new responsibility against existing Overseer runAgent/AgentSpawner, Scheduler hooks, mcp-shared import/tool classification, Gatekeeper Kit staging/observer, Context Library, native AI Gateway, Worktree/Git, notification/observability and release pipeline. Reject duplicate authoritative state, permissions, catalogs, scheduling or public RPC. Every task implementation must add characterization tests of affected existing behavior and preserve the user-input ledger in the same repo-changing interaction.

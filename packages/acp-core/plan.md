@@ -62,3 +62,12 @@ packages/acp-core/
 ## Critério final
 
 Compatibilidade com motor nativo Workshop e Gatekeepers existentes; detalhes específicos de ACP/native expostos por extensões tipadas sem quebrar um front-end único. **Sem comprovação de deploy ainda.**
+
+
+## Mandatory boundary revision (audit 2026-10-13)
+
+See [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md) and root SPECS §23. **No-overlap rule:** Owns ACP-specific JSON-RPC stdio framing/correlation only. It neither replaces Workshop Cap'n Web ABI nor implements a platform-wide wire protocol; source ACP session IDs must never become authorization or native chat IDs.
+
+**Required preparatory implementation gates:** Compare Hub and Grokbot initialization fixtures with live pinned version; translate via agent-protocol into ACC; test server-initiated permission alongside Workshop action approval without double grant.
+
+This is a reviewed design constraint. Neither this folder nor its plan constitutes a running module. Every completed plan step must link a source SHA, target commit, real contract/security tests and E2E proof where a Worker/Container is involved.

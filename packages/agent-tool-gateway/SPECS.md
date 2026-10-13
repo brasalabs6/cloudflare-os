@@ -67,3 +67,18 @@ Attach source commit/paths and target commit/tests to the [migration matrix](../
 
 [Detailed per-package plan](./plan.md) contains ordered work, dependency gates, source extraction, migrations, verification and rollout. All plan checkboxes start OPEN; this document does not imply implementation.
 
+
+
+## Mandatory boundary revision (audit 2026-10-13)
+
+See [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md) and root SPECS §23. **No-overlap rule:** It is an *optional authenticated REST/MCP server export* for already-authorized Workshop capabilities; never a second MCP client/trust engine, Gatekeeper action queue or unscoped direct Task/Runtime API. In particular the existing ExternalMessageGateway trusts callerEmail and MUST NOT be used as public identity admission.
+
+**Required preparatory implementation gates:** Inventory router prefixes /api and /gatekeeper, ExternalMessageGateway trusted-only RPC, and Workshop AuthenticatedApi; design audience-bound revocable ticket and current grant resolver; test tools/list and tools/call against real Gatekeeper action/observation, denial/revocation and anonymous impersonation.
+
+This is a reviewed design constraint. Neither this folder nor its plan constitutes a running module. Every completed plan step must link a source SHA, target commit, real contract/security tests and E2E proof where a Worker/Container is involved.
+
+## PDR MCP domain projection on the existing server gateway (design only)
+
+The PDR's single remote HTTP MCP endpoint, resources, discovery and authenticated `tools/call` **belong to this Tool Gateway**. Do not create `mcp-domain-gateway` or a duplicate OAuth/resource catalog. Tool manifests and routing are from `agent-tool-registry`. Every WorkItem/Mailbox/Fact action routes to its *real* owner via a narrow, fresh Workshop-verified scope; IDs and resource URLs are selectors, never bearer credentials. `task.*` projects **WorkItem** rather than ACC execution `Task`. Device notifications remain Workshop-owned and external MCP BYO/Portal import trust remains `mcp-shared`-owned. Pin and test actual MCP server/client protocol, HTTP transport and OAuth audience/revocation versions before advertising compatibility.
+
+Acceptance: two real MCP host clients, read/write parity with Workshop/Code Mode, cross-tenant negative suite, revoked grant mid-action, pending approval, idempotency mismatch, source cursor replay and honest UNKNOWN state. See [PDR plan](../../docs/architecture/MULTIAGENT_MCP_IMPLEMENTATION_PLAN.md).

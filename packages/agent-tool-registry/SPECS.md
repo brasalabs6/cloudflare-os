@@ -66,3 +66,16 @@ Attach source commit/paths and target commit/tests to the [migration matrix](../
 
 [Detailed per-package plan](./plan.md) contains ordered work, dependency gates, source extraction, migrations, verification and rollout. All plan checkboxes start OPEN; this document does not imply implementation.
 
+
+
+## Source audit correction / mandatory no-overlap gate — 2026-10-13
+
+**Governing evidence:** [32 existing module audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS.md §23, and current executable source. **Boundary:** NARROWED: it is a non-authoritative projection/index of tool descriptions derived from current Gatekeeper Session capabilities and mcp-shared/catalog/tool classifier. No grant database, no policy engine, no shadow invocation authorizer, no trusting ToolManifest.readOnlyHint for side-effect classification.
+
+**Implementation ordering:** Before implementation: reuse getAgentCatalog/getTypeScriptTypes/getSlashCommandProvider, mcp-shared classifyTool and tool-scope checks; resolve live grant before tools/list or invocation; stage actions on original Gatekeeper and add revoked-grant, BYO-unvetted, foreign observer adversarial tests.
+
+**Blockers:** no executable implementation until existing behavior is characterized; module files in this directory are currently planning documents only. For every feature, record source/target authority, typed schema, security negative test, crash/idempotency case and relevant integration evidence. If a proposed API duplicates current authority, revise the proposal first instead of implementing a duplicate.
+
+## Multiagent coordination tools — single-registry rule (design only)
+
+Publish PDR `agent.*`/`workspace.*`/`goal.*`/`task.*`/`message.*`/`memory.*`/`learning.*`/`continuity.*`/`event.*` as **versioned ToolManifests in this existing registry**, not through an alternative MCP-specific catalog. Map public `task.*` exclusively to Control Plane `WorkItem` endpoints; execution `Task`/`Execution` require different explicit privileged tools. Revalidate actual caller grant, workspace, risk policy and schema on invoke. External source/context documents are untrusted; no readOnlyHint-based permission escalation. Use existing module owner and security contracts per [responsibility audit](../../docs/architecture/MULTIAGENT_RESPONSIBILITY_AUDIT.md).

@@ -73,3 +73,12 @@ Distill Grokbot tested Grok CLI behavior only. Default driver ACP; native Grok p
 ### Acceptance
 
 A change is done only with strict schemas, migrated/verified data shapes, tests for idempotent admission, partial protocol messages, replay and crash/reconciliation, deny-by-default resource grants, source provenance and staging E2E for deployed services. Verify that core Workshop Code Mode and Gatekeeper simulation tests remain green.
+
+
+## Mandatory boundary revision (audit 2026-10-13)
+
+See [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md) and root SPECS §23. **No-overlap rule:** Only Grok CLI-specific protocol/config/translation (Grokbot extraction). CLI Linux supervisor, terminal, filesystem, egress and policy are owned by agent-runtime, gatekeeper-computers and agent-egress respectively. Do not port Grokbot Next.js/Postgres identity.
+
+**Required preparatory implementation gates:** Trace Grokbot PR #1 pinned SHA and ACP smoke fixture; port CLI-specific commands and event maps, test deny tool permissions and provider intercepted HTTPS with runtime adapter; no --always-approve production flag.
+
+This is a reviewed design constraint. Neither this folder nor its plan constitutes a running module. Every completed plan step must link a source SHA, target commit, real contract/security tests and E2E proof where a Worker/Container is involved.

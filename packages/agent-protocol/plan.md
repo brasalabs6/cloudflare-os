@@ -74,3 +74,12 @@ Event normalization equivalence between Workshop/pi, Grok ACP, Codex ACP/native 
 
 **Done only when** every checked item has code and test links, plus an actual release/deploy reference if this package produces a Worker. No long-running autonomous loop or public MCP API is "done" based solely on mocks.
 
+
+
+## Source audit correction / mandatory no-overlap gate — 2026-10-13
+
+**Governing evidence:** [32 existing module audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS.md §23, and current executable source. **Boundary:** ACC is a schema/event+EngineDriver semantic adapter only. Browser Cap'n Web and Gatekeeper public interfaces are exclusively defined in workshop-shared. Native pi-agent-core and ACP transports retain their original authoritative message/state records.
+
+**Implementation ordering:** Before implementation: map AiChatStreamEvent, pi AgentEvent and existing Cap'n Web response/error shapes; prove generated ACC events are read projections; create sourceEventId + projectionCursor dedup fixtures; do not persist a second chat history.
+
+**Blockers:** no executable implementation until existing behavior is characterized; module files in this directory are currently planning documents only. For every feature, record source/target authority, typed schema, security negative test, crash/idempotency case and relevant integration evidence. If a proposed API duplicates current authority, revise the proposal first instead of implementing a duplicate.

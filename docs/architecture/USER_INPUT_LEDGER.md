@@ -128,3 +128,74 @@ pegue também todos os meus inputs que ja existiram nessa sessão e crie um arqu
 - [Base inicial das specs](https://github.com/brasalabs6/cloudflare-os/commit/12ba0acd8f70178f4098f1fb79e3a47d81041f90)
 - [Contratos ACP](./ACP_CONTRACTS_V1.md) · [Matriz de destilação](./ACP_MIGRATION_MATRIX.md)
 - [Grokbot PR #1, fonte de destilação](https://github.com/brasalabs6/grokbot/pull/1)
+
+
+## 2026-10-13 — Evidências adicionadas para U-006/U-007 (anotação posterior, sem alterar inputs)
+
+**Rascunhos implementados no repositório (somente documentação e planejamentos):**
+
+- [Arquitetura unificada de AgentDefinition, Task, loops, EngineDriver, subagentes e ferramentas](./AGENT_PLATFORM_UNIFIED_V2.md) — commit [5b2244c](https://github.com/brasalabs6/cloudflare-os/commit/5b2244c89e1d8c6ef97abad468fc17ff01d3ca82).
+- [Seis novos packages, com SPECS.md e plan.md](https://github.com/brasalabs6/cloudflare-os/commit/83befb767e78cd2f86a4bd1dd7e77a34efebb6cc): agent-protocol, agent-control-plane, agent-loop, agent-harness-native, agent-tool-registry e agent-tool-gateway.
+- [Dez specs/plans ACP, harnesses, runtime, Gatekeepers e UI](https://github.com/brasalabs6/cloudflare-os/commit/53ea6639b7bf34afe41fb594dbe81aeb22264adc).
+- [Oito specs/plans para integração com componentes existentes](https://github.com/brasalabs6/cloudflare-os/commit/c23944d4b061e41e7c4c4435a3d517befb5b621b): Workshop backend/shared/frontend, Scheduler, MCP Shared, MCP BYO/Portal e router.
+- [Matriz de rastreabilidade unificada](./AGENT_FEATURE_TRACEABILITY.md) e [JSON Schema v2](./schemas/agent-platform-v2.schema.json) — incluídos no commit desta anotação.
+- Registro literal criado no commit [162b8ba](https://github.com/brasalabs6/cloudflare-os/commit/162b8ba95e9d7c9819d865cbde4f22968993b823).
+
+**Ainda não implementado:** os pacotes novos não possuem runtime compilável, DOs, API pública/métodos MCP operacionais, deploys, smoke E2E no Cloudflare OS nem provas de paridade. Arquivamento do Grokbot pendente. Planos não são resultado funcional.
+
+
+## U-008 — Auditoria minuciosa e eliminação de sobreposições (2026-10-13)
+
+**Tipo:** transcrição literal do pedido recebido nesta sessão.
+
+```text
+Eu preciso que você faça uma análise mais minuciosa e revise tudo e principalmente revisar os módulos já existentes pra você conseguir implementar o nosso sistema sem que a gente sobreponha a responsabilidade de outros módulos que já existam, tá ligado?
+```
+
+**Objetivo interpretado:** auditar os módulos existentes da main antes de iniciar runtime/autonomia, descobrir duplicação de responsabilidades, revisar as specs/planos, corrigir o documento canônico raiz e estabelecer critérios de implementação que preservem as funcionalidades maduras do Cloudflare OS.
+
+**Entregue / evidência:** [auditoria dos 32 packages existentes, 15 novos diretórios e 20 decisões de fronteira](./EXISTING_MODULE_BOUNDARIES_AUDIT.md), commit [cb71dab](https://github.com/brasalabs6/cloudflare-os/commit/cb71dab154c7b595cb38afece979bce5953f1cb8); atualização normativa do root SPECS.md §23, correções de specs/plans dos módulos conflitantes e registro desta entrada no commit que introduz estas linhas. Nenhum novo runtime foi desenvolvido ou testado; os principais bloqueios são ABI/approval, task-to-native dispatch, MCP export auth e lançamento de containers. Grokbot permanece sem arquivamento.
+
+**Regra de próximas alterações:** atualizações datadas por novas entradas/anotações, sem modificar o texto literal.
+
+
+### Atualização verificável de U-008 — revisão dos packages e planos
+
+**Fonte:** [auditoria principal](./EXISTING_MODULE_BOUNDARIES_AUDIT.md) (commit `cb71dab`). **Resultado entregue:** reclassificação dos 47 diretórios de package (32 implementados e 15 apenas documentais), matriz de propriedade de entidades e 20 conflitos/decisões B01–B20; root `SPECS.md` e `AGENTS.md` atualizados para reconhecer e obrigar consulta às fronteiras de autoridade.
+
+**Revisões efetivamente gravadas:** [root/registro e unificação](https://github.com/brasalabs6/cloudflare-os/commit/8e3e23d2e73349847f180b461ccf56d71c617b3a); [ACC/Control Plane/Loop/Native/Tool Registry](https://github.com/brasalabs6/cloudflare-os/commit/322a91a2a3490c31b1a379c73e1d36ebf2eaf036); [MCP export/ACP/Release/Grok/Codex](https://github.com/brasalabs6/cloudflare-os/commit/eb95a27c87ad0050b668f148d6d6cad60a5dd5bb); [OpenCode/Runtime/Egress/Gatekeepers](https://github.com/brasalabs6/cloudflare-os/commit/e1497819d159c047f0448bcd4d40bca2be3836f4); [Workshop backend/shared/Scheduler/MCP Shared](https://github.com/brasalabs6/cloudflare-os/commit/6704a8d25f2c1f423c0f67802fa0b67dc09ffdc2); [MCP BYO/Portal/router/frontend](https://github.com/brasalabs6/cloudflare-os/commit/873d2e58d27f7140a269c04553070807b444aece); [UI de agentes/Kit/Context/Observability/Error Reporting](https://github.com/brasalabs6/cloudflare-os/commit/91e5bc8a0285b9d73727d6efdf9f873dd7baf565).
+
+**Não executado / pendente:** nenhuma implementação TS/DO/Worker, testes de compilação, testes de integração em Cloudflare ou deploy. Permanecem gates de API dos Gatekeepers, paridade do runAgent nativo, Task→Overseer despacho/resultado, auth do MCP server, destilação verificada do Grokbot e cenários de A/B/recuperação. O arquivamento Grokbot segue pendente.
+
+## U-009 — Solicitação de proposta MCP baseada no ZIP
+
+**Tipo:** transcrição literal disponível nesta conversa (ordem histórica da conversa, registrada depois de U-008 já existente).
+
+````text
+Analise essas specs e proponha essa arquitetura implementada no brasalabs6/cloudflare-os 
+Modulos independentes que serão acessiveis pelos agentes via mcp
+````
+
+**Objetivo:** adaptar PDR/SPECS de coordenação multiagente à topologia real de Cloudflare OS, via capacidades MCP e RPC já definidas.
+
+**Resultado:** [PR #4](https://github.com/brasalabs6/cloudflare-os/pull/4) com arquitetura/contratos revisados após [auditoria de módulos existentes](./EXISTING_MODULE_BOUNDARIES_AUDIT.md), além da [matriz PDR específica](./MULTIAGENT_RESPONSIBILITY_AUDIT.md). Specs são propostas, não runtime.
+
+---
+
+## U-010 — Solicitação de PR de documentação
+
+**Tipo:** transcrição literal disponível.
+
+````text
+Execute a criação das specs e docs em um novo PR
+````
+
+**Objetivo:** versionar contratos/ADRs/specs em novo PR.
+
+**Resultado:** [PR #4](https://github.com/brasalabs6/cloudflare-os/pull/4), Draft. Revisão posterior removeu autoridades paralelas e atualizou specs/plans dos módulos canônicos. Testes e deploys pendentes.
+
+---
+
+## 2026-10-13 — Nota de revisão para U-008
+
+**Solicitação U-008:** revisão minuciosa para eliminar sobreposição de responsabilidades. A revisão do PR #4 assume a auditoria canônica [EXISTING_MODULE_BOUNDARIES_AUDIT](./EXISTING_MODULE_BOUNDARIES_AUDIT.md) e detalha a diferença entre v2 execução `Task` e PDR WorkItem, mantendo AgentDefinition/loops/triggers no Control Plane, export MCP no Tool Gateway e eventos no ACC. Somente Mailbox é lacuna nova confirmada de projeto; novo armazenamento de fatos/learning requer primeiro gate de reutilização do Context. Nenhum runtime ou E2E é apresentado como implementado.

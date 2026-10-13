@@ -166,3 +166,58 @@ stateDiagram-v2
 ```
 
 All upstream tools remain constrained by the selected portal-server resource scope. Retiring trust MUST prevent auto-application to already-pending but newly disallowed actions. Failed portal introspection is not permission to fall back to a generic unvetted endpoint. Tests MUST exercise trust withdrawal without reconnect, old-generation in-flight completion, endpoint repoint, per-server scoping, expired auth and simulated action outcomes.
+
+
+## Unified Agent Platform integration contract — 2026-10-13
+
+**Status:** incremental integration SPEC and IMPLEMENTATION DRAFT, not a runtime change. **Normative:** [Unified Agent Platform v2](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input and evidence ledger](../../docs/architecture/USER_INPUT_LEDGER.md). For this package see the [ordered plan](./plan.md). Existing behaviors documented above remain authoritative until a reviewed, backwards-compatible migration is implemented.
+
+### Component and control flow
+
+```mermaid
+flowchart TD
+ Admin[Configured portal endpoint] --> Portal[Existing MCP Portal Gatekeeper]
+ Portal --> Server{Chosen upstream server}
+ Server --> Tools[Scoped tool catalog]
+ Tools --> Policy[Live vetted/unvetted annotations policy]
+ Policy --> Actions[Approval queue / observations]
+ Tools --> Registry[ACC Tool Registry projection]
+```
+
+### Proposed integration data schema and API changes
+
+```typescript
+type PortalToolGrantRef={portalEndpointFingerprint:string;serverId:string;toolName:string;currentTrustPolicyRevision:string;selectedToolScope:string;accountGeneration:number}
+```
+
+Validate at boundaries, add JSON Schema where values cross Worker/process/storage, specify schema version and migrations. This is a draft shape to be reconciled with actual public types and Cap'n Web support before modifying kernel interfaces.
+
+### Implementation file map
+
+```text
+packages/gatekeeper-mcp-portal/
+  src/portal.ts and inherited mcp-shared classes (reuse)
+  src/agent-platform-catalog.ts (optional)
+  src/__tests__/{upstream-server-isolation,trust-revocation,agent-tool}.test.ts
+  SPECS.md
+  plan.md
+```
+
+### Ownership, loops, security and backwards compatibility
+
+A portal-connected account can multiplex multiple upstream servers, but each Gadget or autonomous agent binding must select exactly one server and allowed tools. Trust in annotations can change at deployment runtime and must invalidate auto-approval; no cross-server grants or credential retention on endpoint repoint.
+
+**Legacy/source comparison:** Existing MCP Portal SPECS and mcp-shared; serverId scope, live trust policy and deployment-repoint semantics. Preserve all already-tested features and evidence. Do not introduce a parallel scheduler, MCP client policy, login authority, Cap'n Web transport or user-facing run-loop persistence.
+
+### Definition of done
+
+Source→target traceability, schema fixtures, existing test parity and new negative boundary tests, authenticated staging proof for new cross-worker behavior and migration-aware rollback. **Detailed steps:** [plan.md](./plan.md).
+
+
+## No-overlap integration correction (2026-10-13)
+
+Reference: [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS §23. **Owner:** Admin Portal MCP already owns selected upstream serverId, live vetted/unenlisted trust policy, credential generation and endpoint repoint. Agent tools cannot create cross-server grants or leak preissued token.
+
+**Gate before implementation:** Test explicit per-server facet and read/action policy under agent tool registry and Task grants, including repoint and trust revoke races.
+
+Any new agent-platform feature must preserve existing approved observations/actions, tenant scopes, Cap'n Web contract and consumer regressions. A documented proposed integration is not deployed functionality.

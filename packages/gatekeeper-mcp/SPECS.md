@@ -148,3 +148,59 @@ flowchart TD
 ```
 
 SSRF, redirect and endpoint pinning apply to OAuth discovery as well as tool fetch. A reconnect for generic MCP MUST preserve the chosen endpoint identity. Missing observer record access proof means collaboration is refused. Tests MUST include untrusted server metadata, action-description Markdown spoofing, catalog drift, stale OAuth attempt, endpoint redirect and duplicate application.
+
+
+## Unified Agent Platform integration contract — 2026-10-13
+
+**Status:** incremental integration SPEC and IMPLEMENTATION DRAFT, not a runtime change. **Normative:** [Unified Agent Platform v2](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input and evidence ledger](../../docs/architecture/USER_INPUT_LEDGER.md). For this package see the [ordered plan](./plan.md). Existing behaviors documented above remain authoritative until a reviewed, backwards-compatible migration is implemented.
+
+### Component and control flow
+
+```mermaid
+flowchart TD
+ User[User BYO MCP endpoint] --> OAuth[Existing connect OAuth and endpoint pinning]
+ OAuth --> Scope[Granted tool subset]
+ Scope --> GT[McpSessionBase]
+ GT --> R{Tool classification}
+ R -->|read| O[authorizeObservation]
+ R -->|write| A[submitAction / applyAction]
+ GT --> ACC[Tool catalog projection for agents]
+```
+
+### Proposed integration data schema and API changes
+
+```typescript
+type ImportedMcpToolRef={accountBindingId:string;endpointFingerprint:string;toolName:string;catalogPolicyRevision:string;resourceScope:string;classification:'read'|'action'}
+```
+
+Validate at boundaries, add JSON Schema where values cross Worker/process/storage, specify schema version and migrations. This is a draft shape to be reconciled with actual public types and Cap'n Web support before modifying kernel interfaces.
+
+### Implementation file map
+
+```text
+packages/gatekeeper-mcp/
+  src/mcp.ts and inherited mcp-shared classes (reuse)
+  src/agent-platform-catalog.ts (optional metadata bridge)
+  src/__tests__/{agent-access,scope,classification-revocation}.test.ts
+  SPECS.md
+  plan.md
+```
+
+### Ownership, loops, security and backwards compatibility
+
+Generic MCP Gatekeeper already imports untrusted user-selected endpoints. Agent platform consumes resource-granted tools via Gatekeeper session; adding tool registry must not alter OAuth account ownership, BYO readOnlyHint classification, staged action, scope and observer refusal.
+
+**Legacy/source comparison:** Existing Generic MCP Gatekeeper SPECS and mcp-shared; bound user-supplied endpoint, owner-only observers, no annotation-based auto-apply. Preserve all already-tested features and evidence. Do not introduce a parallel scheduler, MCP client policy, login authority, Cap'n Web transport or user-facing run-loop persistence.
+
+### Definition of done
+
+Source→target traceability, schema fixtures, existing test parity and new negative boundary tests, authenticated staging proof for new cross-worker behavior and migration-aware rollback. **Detailed steps:** [plan.md](./plan.md).
+
+
+## No-overlap integration correction (2026-10-13)
+
+Reference: [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS §23. **Owner:** Generic BYO MCP already owns connected endpoint credentials, exact endpoint identity, owner-only resource sharing, mcp-shared tool classification and staged actions. Tool catalog projections must not bypass these gates.
+
+**Gate before implementation:** Test tool import by Native Engine and ACP via granted Gatekeeper, not direct MCP client. Revocation and unvetted annotation tests mandatory.
+
+Any new agent-platform feature must preserve existing approved observations/actions, tenant scopes, Cap'n Web contract and consumer regressions. A documented proposed integration is not deployed functionality.

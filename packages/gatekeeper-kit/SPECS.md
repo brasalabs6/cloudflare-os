@@ -62,3 +62,9 @@ The shipped exports include ./actions, ./action-files, ./auth-retry, ./cache, ./
 
 ## Threat model and testing
 Host validation, SSRF protections, signed preview OAuth state, no unsafe redirects, secrets in errors, stale in-flight refreshes, duplicated callbacks, concurrent applies, hook redelivery, cache partition and observer-gate failures are part of this package's threat model. Unit and Worker tests MUST cover these independently and through a conformant sample gatekeeper. Full sequences and implementation constraints are in README.md, USAGE.md and the exported JSDoc; proposed Layer 2 classes in plans/gatekeeper-kit.md remain non-normative until implemented.
+
+## Cross-module agent-platform boundary audit (2026-10-13)
+
+This package is a preexisting authority/consumer of agent-platform behavior. Refer to the [source-grounded no-overlap audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md) and root SPECS §23 before accepting any overlapping implementation. **Specific requirement:** The new agent Gatekeepers MUST reuse gatekeeper-kit stageAction, ActionJournal, claim-before-apply/ActionOutcomeUnknownError, observer verification, persistent hook and simulation semantics. No new approval queue implementation belongs in a task/tool gateway.
+
+Any downstream addition needs existing consumer regression tests plus scoped-auth/idempotency/race tests; a documentation reference is not proof of runtime implementation.

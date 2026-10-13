@@ -1,158 +1,132 @@
-# Multiagent domain — Canonical contracts v1 (proposal)
+# Multiagent coordination delta contracts v1 — ACC/ACP-compatible proposal
 
-**Status:** proposed normative contract for future implementation; no corresponding runtime code has been shipped. **Date:** 2026-10-13.
-**Precedence:** root `SPECS.md` and package specs. Keep [ACP execution contracts](./ACP_CONTRACTS_V1.md) authoritative for `Session`, `Run`, `Operation`, `AgentEvent` and ACP approvals.
+**Status:** design-only; executable schemas not yet generated. **Date:** 2026-10-13.
+**Parent:** [Unified Agent Platform v2](./AGENT_PLATFORM_UNIFIED_V2.md); canonical event/control SPI [agent-protocol](../../packages/agent-protocol/SPECS.md); sandbox run [ACP_CONTRACTS_V1](./ACP_CONTRACTS_V1.md).
+**Do not redeclare:** `AgentDefinition`, execution `Task`, `Execution`, `AgentEventV1`, `AgentCommandV1`, `EngineDriver`, `Session` or `Run`. Those already have owners in v2/ACP.
 
-## 1. IDs and authority
+## 1. Contract model
 
-| ID | Issuer/owner | Meaning |
-|---|---|---|
-| `workspaceId`, `principalId` | Workshop | Human/workspace authorization context |
-| `agentId` | Directory | Stable logical agent identity |
-| `agentInstanceId` | Directory | Workspace-specific instance; `external` or `managed` |
-| `goalId`, `taskId`, `taskRunId` | Goals/Tasks | Business objective, task and task attempt |
-| `channelId`, `messageId` | Mailbox | Message stream and message identity |
-| `memoryId`, `learningId` | Memory | Versioned knowledge and review proposal |
-| `ledgerId` | Continuity | Scoped summary projection |
-| `domainEventId` | Owning domain module | Deduplicatable business event |
-| `agentSessionId`, `agentRunId`, `sandboxGeneration` | ACP runtime | Managed execution only; never identify a domain principal |
+- Workshop `workspaceId` and principal/grants come from authenticated Workshop identity and policy, never bearer-like IDs in tool input.
+- v2 `agentId`, `taskId` (execution), `executionId` and `agentRunId` remain owned by Control Plane/Runtime.
+- **New** `goalId`, `workItemId`, `workClaimEpoch`, `workItemReviewId` are Control Plane *workboard* identities. Public PDR MCP `task.*` tool family maps to WorkItem, not the v2 execution Task. `Task.workItemId?` is a proposed **versioned foreign correlation**, not a shared primary key.
+- `channelId`/`messageId` are Mailbox-scoped; `memoryId`/`learningId` refer only to workspace facts/review, not Context collection/document IDs.
+- Continuity source uses ACC event cursor/vector and **projection revision**, never replaces ACP checkpoint or Overseer chat compaction.
 
-All IDs are opaque, server generated, and scoped/validated by owning modules. A request `workspaceId` selects *where* an operation is performed, never *who* performs it. Timestamps are RFC3339 UTC; versions/sequence/lease epochs are increasing integers.
-
-## 2. Authenticated context and normalized operations
+## 2. Proposed Workboard additions inside agent-control-plane
 
 ```typescript
-type ActorContext = {
-  principalId: string;  // trusted ingress identity, never agent-supplied
-  actorKind: "human" | "agent" | "platform";
-  workspaceId: string;
-  agentId: string | null;
-  credentialId: string | null;
-  grantedScopes: string[];
-  correlationId: string;
+type Goal = {
+  schemaVersion:1; goalId:string; workspaceId:string; projectId:string|null;
+  title:string; desiredOutcome:string; definitionOfDone:string[];
+  state:"ACTIVE"|"COMPLETED"|"CANCELLED"; revision:number;
 };
-type DomainErrorCode =
-  | "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "INVALID_INPUT"
-  | "VERSION_CONFLICT" | "LEASE_CONFLICT" | "LEASE_EXPIRED"
-  | "DEPENDENCY_BLOCKED" | "DEPENDENCY_CYCLE" | "APPROVAL_REQUIRED"
-  | "IDEMPOTENCY_MISMATCH" | "OUTCOME_UNKNOWN"
-  | "RATE_LIMITED" | "QUOTA_EXCEEDED" | "WORKSPACE_DISABLED";
-type DomainFailure = {
-  ok: false; error: {code: DomainErrorCode; message: string; retryable: boolean};
-  requestId: string;
+type WorkItem = {
+  schemaVersion:1; workItemId:string; workspaceId:string;
+  goalId:string|null; parentWorkItemId:string|null;
+  title:string; description:string; acceptanceCriteria:string[];
+  priority:number; assigneeAgentId:string|null; revision:number;
+  state:"BACKLOG"|"READY"|"CLAIMED"|"REVIEW"|"DONE"|"FAILED"|"CANCELLED";
+  evidenceRefs:string[]; lastExecutionTaskId:string|null;
+};
+type WorkItemDependency = {
+  schemaVersion:1;workspaceId:string;workItemId:string;prerequisiteWorkItemId:string
+};
+type WorkItemClaim = {
+  workItemId:string; agentId:string; leaseEpoch:number;
+  leaseTokenDigest:string; leaseExpiresAt:string
+};
+type WorkItemReview = {
+  reviewId:string;workItemId:string;submittedByAgentId:string;
+  reviewerPrincipalId:string|null;decision:"PENDING"|"ACCEPTED"|"CHANGES_REQUESTED"|"REJECTED";
+  evidenceRefs:string[];reviewedAt:string|null
 };
 ```
 
-A secure first-party RPC adapter constructs `ActorContext` from existing Workshop capabilities. The MCP adapter constructs it only after bearer-token/OAuth resource validation, audience, expiry, workspace membership and the exact tool/resource grant. Never accept caller-provided scopes, principalId or agentId as authority. Return redacted NOT_FOUND when necessary to prevent cross-workspace enumeration.
+`READY` is only actionable if DAG prerequisites and explicit blocker policy allow it. `BLOCKED` may be derived, not a competing stored state. Edges must remain acyclic inside one workspace, validated in same Tasks/Workboard owner transaction. A claim is exclusive with monotonic `leaseEpoch`, secret digest (one-time token returned to claimer), actor+expiry validation on every mutation. A stale lease cannot submit result or release another owner's work. A reviewer must be distinct from the submitting agent; high-risk approval stays human-only.
 
-## 3. Stable domain state
+An accepted WorkItem creates/links a v2 Control Plane `Task` only by explicit authorized dispatch; physical `Execution` success is not WorkItem `DONE` without required review. ACP `OUTCOME_UNKNOWN` remains indeterminate.
 
-### Agent
+**Naming compatibility:** the existing v2 `Task` state values (QUEUED/CLAIMED/RUNNING/...) and its `Execution` lease/fence are unchanged. The WorkItem's separate claim is a business assignment lease; its lifetime never controls a CLI process or changes runtime generation.
 
-`AgentDefinition`: `agentId, ownerPrincipalId, displayName, status, defaultHarnessId?, policyProfileId?, version`. `AgentWorkspaceGrant`: `workspaceId, agentId, scopes, state, version`. `AgentInstance`: `agentInstanceId, workspaceId, agentId, executionMode, parentAgentInstanceId?, parentTaskId?, spawnDepth, agentSessionId?, status`. External registration/credentials never imply active process. Heartbeat presence derives from a server-measured TTL; `online` does not imply idle.
-
-### Goals and tasks
-
-`Goal`: `goalId, workspaceId, projectId?, title, desiredOutcome, definitionOfDone, status, version`.
-`Task`: `taskId, workspaceId, goalId?, parentTaskId?, title, description, acceptanceCriteria[], priority, assigneeAgentId?, status, version, evidenceRefs[], createdAt, updatedAt`.
-`TaskDependency`: `workspaceId, taskId, prerequisiteTaskId`. Dependencies are a directed acyclic graph; cross-workspace edges and self-cycles fail before mutation.
-`TaskClaim`: `taskId, agentId, leaseEpoch, leaseTokenDigest, expiresAt` (store only the token digest). `TaskRun`: `taskRunId, taskId, leaseEpoch, agentRunId?, outcome, evidenceRefs[]`.
-
-Persisted task states: `BACKLOG | READY | IN_PROGRESS | WAITING_APPROVAL | REVIEW | DONE | FAILED | CANCELED`. `BLOCKED` is *derived* from missing prerequisite completions and explicit blocker references, never a conflicting manually persisted state. Dependency recomputation can render a READY task not actionable.
-
-Permitted transitions (minimum): `BACKLOG -> READY` when requirements allow; `READY -> IN_PROGRESS` only through an exclusive claim; `IN_PROGRESS -> REVIEW` via valid lease and evidence; `REVIEW -> DONE` on authorized independent review or declared auto-review policy; `REVIEW -> READY` on requested changes; `IN_PROGRESS -> FAILED`; cancel from nonterminal states under authorized policy. Terminal states do not silently reopen. Expired claims are fenced before any write.
-
-Claims: one task owner transactionally; increment `leaseEpoch` on every new claim/ownership change. `task.claim` compares `expectedVersion`, issues secret token once, stores its digest and expiry, commits owner/status/version; `renew_lease`/`progress`/`submit_result` verify epoch, token, owner and expiry. Old epoch is invalid even if old bearer token was replayed. Replay of a successful idempotent claim must not expose an already invalid lease token; reauthenticate/reclaim as policy permits.
-
-### Mailbox
-
-`Channel`: `channelId, workspaceId, kind: "direct"|"workspace", createdAt, nextSequence`. `Message`: `messageId, channelId, channelSequence, senderPrincipalId, body, kind, taskId?, createdAt`. `RecipientReceipt`: `messageId, recipientPrincipalId, deliveredAt?, ackedAt?`. Sending + initial recipient receipts commits atomically within the Mailbox owner. Ordering is total within each channel, not global. `ack` means received/read, never executed. An unconnected agent reads its own backlog through `message.pull` after reconnect.
-
-### Memory / Learning / Continuity
-
-`Memory`: `memoryId, workspaceId, scope, category, body, provenanceRefs[], status, revision, createdBy, updatedAt` and immutable `MemoryRevision`s. No automatic promotion of untrusted source content to instructions. `LearningProposal`: `learningId, workspaceId, statement, sourceRefs[], confidence, status: "PROPOSED"|"APPROVED"|"REJECTED", reviewedBy?, revision`; approver must meet policy and cannot merely self-assert a fact.
-
-`ContinuityLedger`: `ledgerId, workspaceId, subjectType: "workspace"|"agent", subjectAgentId?, version, goal, constraints, decisions, done, now, next, blockers, questions, workingSet, sourceEventCursor, updatedBy, updatedAt`. Every patch requires `expectedVersion`; stale indicator if events outpace `sourceEventCursor`. It is an attributed projection: changing "done" cannot mutate a Task or ACP state.
-
-## 4. Local transaction, idempotency and event envelope
-
-All mutations with observable effect MUST implement an owning-DO transaction that couples canonical state, idempotency result, redacted audit event and outbox entries. `(principalId, operation, idempotencyKey)` is unique per workspace; same key + same canonical request digest returns prior reference/result when still valid; changed digest returns `IDEMPOTENCY_MISMATCH`. No distributed SQL transaction is claimed.
+## 3. Mailbox — the only missing offline-message authority
 
 ```typescript
-type DomainEventV1 = {
-  schemaVersion: 1;
-  eventId: string;
-  workspaceId: string;
-  entityType: string;
-  entityId: string;
-  entityVersion: number;
-  eventType: string;
-  actorPrincipalId: string;
-  correlationId: string;
-  causationId: string | null;
-  occurredAt: string;
-  redactedPayload: Record<string, unknown>;
+type Channel = {
+  schemaVersion:1;channelId:string;workspaceId:string;
+  kind:"direct"|"workspace";sequence:number;createdAt:string
 };
-type OutboxRecord = {
-  eventId: string; targetModule: string; attemptCount: number;
-  nextAttemptAt: string; deliveredAt: string | null;
+type ChannelMember = {channelId:string;principalId:string;role:"member"|"moderator"};
+type MailMessage = {
+  schemaVersion:1;messageId:string;channelId:string;
+  channelSequence:number;senderPrincipalId:string;
+  kind:"text"|"task_notice"|"handoff";body:string;workItemId:string|null;createdAt:string
+};
+type MailReceipt = {
+  messageId:string;recipientPrincipalId:string;
+  deliveredAt:string|null;ackedAt:string|null
 };
 ```
 
-Consumer inbox has unique `(sourceModule,eventId)`. Retry with bounded exponential backoff, publish/replay cursors and a visible dead-letter/repair state. For `task.assign`, transaction commits task + outbox; a Mailbox consumer later atomically inserts notification/receipts and dedupe key. Status MUST distinguish task-committed from message-delivered. Retention/compaction MUST preserve dedupe safety over the retry horizon.
+`message.send` atomically appends message/receipt rows and checks membership; `message.pull` returns recipient-only unread/cursor page; `message.ack` marks only own receipts; `message.list` returns authorized channel history. Per-channel sequence is ordered; no global order claimed. All bodies are untrusted data. Never reuse `ExternalMessageGateway` keys to authenticate agents and never treat a mailbox notice as a callable agent RPC. Existing chat remains separate.
 
-## 5. Agent-facing MCP tool names (candidate v1)
+## 4. Structured workspace memory and reviewed learning
 
-Exact public names, each backed by a domain service and reviewed scope + input/output schema:
+```typescript
+type WorkspaceFact = {
+  schemaVersion:1;memoryId:string;workspaceId:string;subjectAgentId:string|null;
+  statement:string;tags:string[];sourceRefs:string[];revision:number;
+  status:"ACTIVE"|"ARCHIVED";createdByPrincipalId:string;updatedAt:string
+};
+type LearningProposal = {
+  schemaVersion:1;learningId:string;workspaceId:string;statement:string;
+  sourceRefs:string[];confidence:number;revision:number;
+  status:"PROPOSED"|"APPROVED"|"REJECTED";reviewedByPrincipalId:string|null
+};
+```
 
-| Domain | Tools | Required scopes (representative) |
+This is **not** a ContextDocument, skills store, generic content editor or new second full-text library. Reuse Context Gatekeeper for user-private/domain-public documents and verified evidence reads. New workspace facts require their own verified workspace ACL and revision policy; human-reviewed promotion to Context, if offered, uses its reviewed **management** interface, not a forged agent write permission. Before implementing `agent-memory` persistence, compare a safe Context extension against a scoped new DO and record the security tradeoff.
+
+## 5. Continuity is a Control Plane read model
+
+```typescript
+type ContinuityProjection = {
+  schemaVersion:1;workspaceId:string;subjectAgentId:string|null;revision:number;
+  goal:string;constraints:string[];decisions:string[];done:string[];
+  now:string[];next:string[];blockers:string[];questions:string[];
+  workingSetRefs:string[];sourceAccCursor:string;updatedByPrincipalId:string;
+  stale:boolean;updatedAt:string
+};
+```
+
+`continuity.get` reads the projection and marks stale if source ACC events outrun the cursor. `continuity.patch` records an attributed revision with compare-and-set. This is a summary, **not** an alternate `Task`/WorkItem/run database or a replacement for Overseer chat compaction.
+
+## 6. One catalog, one event model, scoped PDR aliases
+
+All tool descriptions, schemas, names, scopes and stable IDs belong in **agent-tool-registry**. Public remote MCP/HTTP transport belongs in **agent-tool-gateway**; first-party RPC uses verified Workshop bindings to the same service. Candidate PDR aliases:
+
+| MCP family | Actual owner/domain RPC | Notes |
 |---|---|---|
-| Identity | `agent.whoami`, `agent.heartbeat`, `agent.list`, `workspace.list`, `workspace.get` | authenticated, `agent:heartbeat`, `agent:read`, `workspace:read` |
-| Goals | `goal.list`, `goal.create`, `goal.update` | `goal:read` / `goal:write` |
-| Tasks | `task.list`, `task.next`, `task.get`, `task.create`, `task.update`, `task.dependencies.set`, `task.assign`, `task.claim`, `task.renew_lease`, `task.progress`, `task.submit_result`, `task.review`, `task.fail`, `task.release` | `task:read` / `task:write` / `task:delegate` / `task:execute` / `task:review` |
-| Messages | `message.send`, `message.pull`, `message.ack`, `message.list` | `message:send` / `message:read` |
-| Memory | `memory.search`, `memory.get`, `memory.create`, `memory.revise`, `learning.propose`, `learning.list` | `memory:read` / `memory:write` / `learning:propose` / `learning:read` |
-| Continuity | `continuity.get`, `continuity.patch` | `continuity:read` / `continuity:write` |
-| Governance | `approval.request`, `event.list` | `approval:request` / `event:read` |
+| `agent.whoami/heartbeat/list`, `workspace.list/get` | Workshop (grants) + Control Plane | no second agent-directory; no agent-supplied principal |
+| `goal.*`, `task.*` | Control Plane **Workboard** (`Goal`/`WorkItem`) | never alias to execution `Task`; error on ambiguous IDs |
+| `message.*` | Mailbox | independent channels/inbox; authorized recipient |
+| `memory.*`, `learning.propose/list` | workspace structured facts/learning | Context docs via separate authorized resource; human reviews only |
+| `continuity.get/patch` | Control Plane ACC projection | snapshot, version/provenance and stale marker |
+| `event.list` | ACC projection + existing audit sources | read-only, no second event store authority |
+| `approval.request` | Existing Workshop approval mechanism **only if exact resource/action is registered** | no generic arbitrary approval bypass |
 
-*Human-only in MVP*: credential issuance, workspace grants, approval decisions, arbitrary shell execution, unrestricted agent spawn and administrative policy changes. A resource/tool listing carries **no authority**. MCP tasks extension, when supported, is protocol request bookkeeping and MUST NOT be confused with business `Task`.
+Server-side policy classification, current grant and input schema are validated on every call; tools/list is no authority. Mutations require stable idempotency + expectedRevision where applicable. Resource URIs are selectors, not access grants. Require JSON Schema 2020-12 + TS fixtures, strict parser bounds, schemaVersion and negative examples before implementing.
 
-Remote resources proposed: `multiagent://workspaces/{workspaceId}/overview`, `.../continuity`, `.../policies`, `.../agents/{agentId}/continuity`; authorization occurs on each read.
+**Canonical event rule:** v2 `AgentEventV1` is the only cross-engine presentation model. Domain owners may atomically persist private outbox events, but MUST project through validated ACC source mapping and dedupe; no separate public `DomainEventV1` schema or independently writable audit timeline.
 
-### Representative request/response shapes
+## 7. Separate approvals and failure/replay
 
-```json
-{"tool":"task.claim","arguments":{"workspaceId":"ws_opaque","taskId":"task_opaque","expectedVersion":3,"idempotencyKey":"claim-01"}}
-```
+- WorkItem review is business acceptance, not provider action permission.
+- Workshop Gatekeeper `submitAction`/`applyAction` controls external side effects and `authorizeObservation` controls protected reads.
+- ACP `session/request_permission` controls a specific runtime tool call and generation.
+- Agent/tool gateway is never allowed to decide any of the above on behalf of a caller.
+- Transactions are owner-local. Control Plane WorkItem assignment + outbox and Mailbox notification are eventually consistent with `eventId` consumer dedupe; no cross-DO ACID guarantee.
+- Unknown physical outcome, stale generation, revoked agent or expired lease are distinct terminal/reconciliation cases. Do not replay ambiguous side effects.
 
-```json
-{"ok":true,"taskId":"task_opaque","taskVersion":4,"status":"IN_PROGRESS","leaseEpoch":2,"leaseToken":"one-time-secret","expiresAt":"2026-10-13T18:00:00Z"}
-```
+## 8. Required regression tests
 
-```json
-{"tool":"message.send","arguments":{"workspaceId":"ws_opaque","toPrincipal":{"type":"agent","id":"agent_opaque"},"kind":"task_handoff","taskId":"task_opaque","body":"Ready for review","idempotencyKey":"handoff-01"}}
-```
-
-```json
-{"ok":false,"error":{"code":"LEASE_CONFLICT","message":"Task already claimed","retryable":false},"requestId":"req_opaque"}
-```
-
-All schemas are **illustrative proposals**, not yet generated validators. Before implementation, publish exact JSON Schema + TypeScript types + negative contract fixtures; keep wire naming consistent (camelCase in this target; implement explicit adapters if importing legacy snake_case clients).
-
-## 6. Reviews, approvals and execution mapping
-
-Task reviewer MUST be distinct from the submitting agent and satisfy `task:review`, risk policy and DoD checks. Task review is not permission to bypass Workshop's Gatekeeper applyAction or ACP `session/request_permission`. Platform-side `approval.request` records a request, never decides it; the human Workshop approval mechanism remains authoritative.
-
-For managed execution: `TaskRun.agentRunId` is a foreign correlation to ACP; no task status transition follows from ACP status alone. A `SUCCEEDED` ACP run does not automatically mean `Task DONE`. `OUTCOME_UNKNOWN` remains indeterminate and forbids blind retry of side effects.
-
-## 7. Mandatory acceptance cases
-
-- Cross-workspace reads, resources, web UI lists and writes all fail closed.
-- Two concurrent `task.claim` calls produce one valid lease epoch; stale lease/owner cannot mutate.
-- Cycle insertion/cross-workspace dependency rejected transactionally.
-- Message send + receipts atomic; reconnect returns offline inbox without duplicates; ack idempotent.
-- `task.assign` followed by Mailbox failure leaves task committed and outbox pending; retries deliver one notification.
-- Memory provenance/revision conflicts and self-approved learning are rejected.
-- Continuity replay after disconnect marks stale source cursor and never overrides task state.
-- Unknown/changed idempotency key body conflict is detectable.
-- MCP/auth client conformance across documented protocol versions and Cap'n Web parity.
+Exact v2 ACC/Task and Workshop/Overseer compatibility; WorkItem-vs-Task ID confusion; two racing WorkItem claims; cycle + cross-workspace edge; mailbox send/receipt/ack/replay; Context observer/scope isolation; memory revocation/revision/learning self-approval; ACC replay dedupe + source order; Gatekeeper action-vs-business review; browser/native/MCP parity; approved Scheduler occurrence and autonomous budget controls.

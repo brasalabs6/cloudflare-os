@@ -43,3 +43,9 @@ flowchart TD
 
 ## Tests and changes
 Verify context nesting/restoration, missing-binding no-op, bounded serialization, duplicate metrics index semantics, schema compatibility, logging secret redaction, worker runtime compatibility and instrumentation under RPC/DO boundaries. Any new attribute with high cardinality or sensitive content requires explicit privacy and query-cost review. Follow README.md, REVIEW.md and source JSDoc.
+
+## Cross-module agent-platform boundary audit (2026-10-13)
+
+This package is a preexisting authority/consumer of agent-platform behavior. Refer to the [source-grounded no-overlap audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md) and root SPECS §23 before accepting any overlapping implementation. **Specific requirement:** Agent/task/engine telemetry MUST reuse @gadgets/observability logger/metrics/tracing; task replay journal remains authoritative state in its owning DO, never in traces/logs. Protected prompts/tool content and provider credentials do not enter metrics.
+
+Any downstream addition needs existing consumer regression tests plus scoped-auth/idempotency/race tests; a documentation reference is not proof of runtime implementation.

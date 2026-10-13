@@ -85,3 +85,8 @@ type MigrationEvidence = {
 ```
 
 A status of MIGRATED requires a real target-runtime E2E where applicable, not merely a GitHub commit or matching types. The normative payload and state contracts are specified in [ACP_CONTRACTS_V1.md](./ACP_CONTRACTS_V1.md).
+
+
+## Agent platform v2 expansion
+
+See [AGENT_FEATURE_TRACEABILITY.md](./AGENT_FEATURE_TRACEABILITY.md) for F-001…F-017 plus Native Workshop N-001…N-005 and autonomous/extension features A-001…A-011. ACP-only status rows above remain valid for the CLI slice but are not a complete user-agent platform implementation. The new normative platform semantics are in [AGENT_PLATFORM_UNIFIED_V2.md](./AGENT_PLATFORM_UNIFIED_V2.md). All target features remain OPEN until code, schema, tests and staging evidence exist.

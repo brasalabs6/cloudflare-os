@@ -97,3 +97,12 @@ Execution authority for CLI subprocess sessions. Control Plane Task DO owns task
 ### Acceptance
 
 A change is done only with strict schemas, migrated/verified data shapes, tests for idempotent admission, partial protocol messages, replay and crash/reconciliation, deny-by-default resource grants, source provenance and staging E2E for deployed services. Verify that core Workshop Code Mode and Gatekeeper simulation tests remain green.
+
+
+## Mandatory existing-module boundary / implementation gate (2026-10-13)
+
+Audit: [EXISTING_MODULE_BOUNDARIES_AUDIT.md](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), governing root SPECS §23. **Owner constraint:** The runtime is the exclusive owner of CLI SessionRuntime/Run/Operation/Container generation and checkpoint. It is NOT an alternate executor for the existing Workshop pi-agent-core native chat, not Task DO, not scheduler and not Gatekeeper grant/approval state.
+
+**Before beginning tasks in this package:** Prove Task DO↔Runtime DO cross-DO operation/outbox and UNKNOWN outcomes; use release-assigned binding, safe PTY/rooted filesystem, no uncontrolled public endpoint. Compare Grokbot generation and cloudflare-os PR#2 low-level Container API evidence.
+
+The directory is DOC_ONLY until package.json, actual source, schema tests and correct Worker configuration are added. No new runtime is implemented by the spec revision. Every relevant plan item requires source→target evidence, typed contract checks, approval/identity threat tests and real worker E2E when applicable.

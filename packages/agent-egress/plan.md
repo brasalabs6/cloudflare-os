@@ -67,3 +67,12 @@ packages/agent-egress/
 ## Critério final
 
 Compatibilidade com motor nativo Workshop e Gatekeepers existentes; detalhes específicos de ACP/native expostos por extensões tipadas sem quebrar um front-end único. **Sem comprovação de deploy ainda.**
+
+
+## Mandatory existing-module boundary / implementation gate (2026-10-13)
+
+Audit: [EXISTING_MODULE_BOUNDARIES_AUDIT.md](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), governing root SPECS §23. **Owner constraint:** Owns only trusted *container* external network/credential boundary and quota validation. Workshop ai-models.ts/ai-gateway.ts already own native provider request configuration and billing flows. Avoid a second unverified AI model catalog and duplicate cost state.
+
+**Before beginning tasks in this package:** Define shared model policy mapping and usage correlation with Workshop, pin provider-specific routes, reject raw CLI secret credentials; test actual Cloudflare CA/interceptOutboundHttps, disallowed hosts/redirects and quota/restart.
+
+The directory is DOC_ONLY until package.json, actual source, schema tests and correct Worker configuration are added. No new runtime is implemented by the spec revision. Every relevant plan item requires source→target evidence, typed contract checks, approval/identity threat tests and real worker E2E when applicable.

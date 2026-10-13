@@ -83,3 +83,12 @@ Registry supports native Workshop engine and external ACP or native protocol dri
 ### Acceptance
 
 A change is done only with strict schemas, migrated/verified data shapes, tests for idempotent admission, partial protocol messages, replay and crash/reconciliation, deny-by-default resource grants, source provenance and staging E2E for deployed services. Verify that core Workshop Code Mode and Gatekeeper simulation tests remain green.
+
+
+## Mandatory boundary revision (audit 2026-10-13)
+
+See [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md) and root SPECS §23. **No-overlap rule:** Defines engine capability fixtures, pinned binaries/images and immutable *agent runtime* release; does not own Workshop AI model preferences or the deployment artifact pipeline scripts/release/manifest-lib.ts. RuntimeTargetId MUST map to an actually deployed Worker binding.
+
+**Required preparatory implementation gates:** Create explicit platformDeploymentReleaseId↔runtimeImage/agentRelease relationship; validate actual service bindings, sticky per-session assignment, rollback/drain, model config intersection with Workshop and live protocol handshake.
+
+This is a reviewed design constraint. Neither this folder nor its plan constitutes a running module. Every completed plan step must link a source SHA, target commit, real contract/security tests and E2E proof where a Worker/Container is involved.

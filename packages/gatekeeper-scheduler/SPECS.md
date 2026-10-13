@@ -168,3 +168,66 @@ stateDiagram-v2
 ```
 
 Every delivered callback must use a fresh HookInitiator session rather than stale stored RPC stubs. Protect against alarm duplication, stale schedule generations, timezone/DST transitions and concurrent disable during dispatch. Tests SHOULD include restart and forced alarm retry, normalization bounds, list authorization, idempotent enable/disable, and no post-revoke invocation.
+
+
+## Unified Agent Platform integration contract — 2026-10-13
+
+**Status:** incremental integration SPEC and IMPLEMENTATION DRAFT, not a runtime change. **Normative:** [Unified Agent Platform v2](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [User input and evidence ledger](../../docs/architecture/USER_INPUT_LEDGER.md). For this package see the [ordered plan](./plan.md). Existing behaviors documented above remain authoritative until a reviewed, backwards-compatible migration is implemented.
+
+### Component and control flow
+
+```mermaid
+sequenceDiagram
+ participant A as Agent Owner
+ participant W as Workshop
+ participant S as Existing ScheduleSession
+ participant O as Approved Hook
+ participant T as Task Control Plane
+ A->>W: Register autonomous trigger
+ W->>S: calendarAt/every/runAt(callback)
+ S-->>W: disabled hook / scheduleId
+ A->>W: approve activation
+ W->>O: enable callback
+ S->>O: occurrence runId
+ O->>T: createTask(idempotency=scheduleId:runId)
+ T-->>O: stable taskId; no duplicate
+```
+
+### Proposed integration data schema and API changes
+
+```typescript
+type AgentScheduleLink={schemaVersion:1;agentId:string;triggerId:string;scheduleId:string;hookBindingId:string;workspaceId:string;source:'approved-scheduler-hook';state:'BOUND'|'ACTIVE'|'DISABLED';revision:number};
+type AgentScheduleOccurrence={scheduleId:string;runId:string;scheduledTime:number;actualTime:number;timeZone:string;idempotencyKey:string}
+```
+
+Validate at boundaries, add JSON Schema where values cross Worker/process/storage, specify schema version and migrations. This is a draft shape to be reconciled with actual public types and Cap'n Web support before modifying kernel interfaces.
+
+### Implementation file map
+
+```text
+packages/gatekeeper-scheduler/
+  src/agent-trigger-adapter.ts (thin integration, only if necessary)
+  src/__tests__/{agent-hook-admission,task-dedup,disabled-trigger}.test.ts
+  src/{schedule-driver,controller}.ts (reuse; no replacement)
+  SPECS.md
+  plan.md
+```
+
+### Ownership, loops, security and backwards compatibility
+
+Use existing ScheduleDriver for calendar/elapsed-time triggers, with explicit hook approvals and per-occurrence stable runId. An enabled hook may create a new Task via Control Plane with scheduleId:runId idempotency; never activate a hidden cron row or duplicate scheduler. Owner disabled/revoked hook prevents new Task admission. Agent Loop handles intra-task steps and sleeping separately.
+
+**Legacy/source comparison:** Existing ScheduleSession.every/calendarAt/runAt, hook bindHook->enable, ScheduleDriver single alarm and retry policy, README and SPECS. Preserve all already-tested features and evidence. Do not introduce a parallel scheduler, MCP client policy, login authority, Cap'n Web transport or user-facing run-loop persistence.
+
+### Definition of done
+
+Source→target traceability, schema fixtures, existing test parity and new negative boundary tests, authenticated staging proof for new cross-worker behavior and migration-aware rollback. **Detailed steps:** [plan.md](./plan.md).
+
+
+## Integration corrective decision — source audit 2026-10-13
+
+Reference: [Existing module boundary audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md); root SPECS §23 takes precedence. **Confirmed current authority:** ScheduleDriver owns all elapsed/calendar/once recurrence, HookController approval, account-wide alarm, stable runId, retries/DST. Agent Task DO is NOT a scheduler; only accepts deduped runId-triggered jobs and independently controls continuation of already accepted Task.
+
+**Required next implementation checkpoint:** Prototype approved persistent callback linkage without rewriting ScheduleDriver; registration itself is NOT idempotent; task admission must be scheduleId:runId idempotent. Test duplicate delivery, disabled hook, revoke, timezone DST and interaction with task cancellation.
+
+Do not change the existing implementation solely because a draft package exists. Preserve current tests, RPC and storage compatibility; any new state machine needs explicit idempotency, observer/action semantics, crash recovery and rollback acceptance. New agent-platform modules are not deployed.

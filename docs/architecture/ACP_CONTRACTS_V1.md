@@ -1,5 +1,7 @@
 # ACP Platform — Canonical contracts v1
 
+> **Scope note (2026-10-13):** This v1 document specifies the ACP CLI session/runtime slice, not the entire autonomous agent platform. Canonical cross-engine AgentDefinition/Task/EngineDriver and AgentEvent contract is in [AGENT_PLATFORM_UNIFIED_V2](./AGENT_PLATFORM_UNIFIED_V2.md) with [machine-readable ACC schemas v2](./schemas/agent-platform-v2.schema.json). Existing v1 sessions require explicit migration, not silent reinterpretation.
+
 **Status:** normative architecture contract, NOT implemented. **Date:** 2026-10-13.
 **Scope:** Grok Build, Codex via codex-acp, OpenCode via ACP. Supersedes the design direction of cloudflare-os PRs #2/#3. Grokbot PR #1 is an extraction reference, not a release dependency.
 

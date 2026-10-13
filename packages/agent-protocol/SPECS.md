@@ -73,3 +73,16 @@ Attach source commit/paths and target commit/tests to the [migration matrix](../
 
 [Detailed per-package plan](./plan.md) contains ordered work, dependency gates, source extraction, migrations, verification and rollout. All plan checkboxes start OPEN; this document does not imply implementation.
 
+
+
+## Source audit correction / mandatory no-overlap gate — 2026-10-13
+
+**Governing evidence:** [32 existing module audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS.md §23, and current executable source. **Boundary:** ACC is a schema/event+EngineDriver semantic adapter only. Browser Cap'n Web and Gatekeeper public interfaces are exclusively defined in workshop-shared. Native pi-agent-core and ACP transports retain their original authoritative message/state records.
+
+**Implementation ordering:** Before implementation: map AiChatStreamEvent, pi AgentEvent and existing Cap'n Web response/error shapes; prove generated ACC events are read projections; create sourceEventId + projectionCursor dedup fixtures; do not persist a second chat history.
+
+**Blockers:** no executable implementation until existing behavior is characterized; module files in this directory are currently planning documents only. For every feature, record source/target authority, typed schema, security negative test, crash/idempotency case and relevant integration evidence. If a proposed API duplicates current authority, revise the proposal first instead of implementing a duplicate.
+
+## Multiagent coordination projection addendum (design only)
+
+ACC `AgentEventV1` remains the **only** normalized cross-engine/business activity projection. Proposed WorkItem created/claimed/reviewed, Mailbox delivered/acked, WorkspaceFact revised/learning proposed and Continuity updated are **new validated source event kinds/extensions**, with source authority, caller-visible scope, dedupe map and replay cursor. They are **not** a second `DomainEventV1` protocol or a second mutable audit datastore. Control Plane execution `Task` and WorkItem IDs are distinct in payload schemas, with explicit aliases only in the Tool Registry. Existing Overseer/ACP original event streams stay authoritative. See [delta contracts](../../docs/architecture/MULTIAGENT_MCP_CONTRACTS_V1.md).

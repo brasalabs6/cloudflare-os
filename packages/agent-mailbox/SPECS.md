@@ -1,30 +1,26 @@
-# Agent Mailbox — SPECS
+# Agent Mailbox — bounded offline communication capability
 
-**Kind:** proposed stateful domain package, Mailbox Durable Object; implementation pending.
-**Traceability:** F07–F08, offline communication, delivery/read receipts.
+**Status:** specification only; no Worker/DO implementation. **Kind:** potential independently stored workspace communication module.
+**Normative:** [Unified Agent Platform v2](../../docs/architecture/AGENT_PLATFORM_UNIFIED_V2.md), [responsibility audit](../../docs/architecture/MULTIAGENT_RESPONSIBILITY_AUDIT.md), [coordination contracts](../../docs/architecture/MULTIAGENT_MCP_CONTRACTS_V1.md).
 
-## Mission
+## Mission: own what existing chats do not
 
-Provide durable agent↔agent and human↔agent communication by scoped channels and recipient inboxes. Sending a message means a durable write, not an ACP prompt, push notification or remote agent wake. The sender, participants and workspace are validated through Workshop-origin authenticated context.
+Provide authenticated human↔agent and agent↔agent workspace **channel messages**, recipient inbox, per-channel ordering and ack/read receipts, including recipients temporarily offline. Unlike `workshop-backend/src/external-message-gateway.ts` it does NOT trust an external gateway `callerEmail` or route a prompt into a Gadget workspace. Unlike Overseer `chats` and `pendingAgentCalls` it is NOT a model transcript, callable RPC queue or implicit engine wake.
 
-## Domain API and MCP projections
+Before writing storage code, implement a test probe demonstrating the actual gap against existing Overseer callbacks and ExternalMessageGateway. If an existing safe primitive satisfies every inbox/receipt/ordering/isolation invariant, reuse it instead of introducing a DO. Do not alter external-message gateway authority.
 
-- `message.send`: exactly one of `channelId` or `toPrincipal`, plus bounded `body`, `kind`, optional `taskId` and `idempotencyKey`; channel/recipient membership checked before persistence.
-- `message.pull`: recipient's workspace inbox with opaque cursor, bounded limit, stable message IDs and receipt status.
-- `message.ack`: only recipient's receipts, idempotent, no implied task completion.
-- `message.list`: channel history for authorized participants, per-channel sequence pagination.
-- Internal `deliverTaskAssignment(event)`: idempotent consumer of Task outbox. Never accept an unverified sender or an event claiming authority from arbitrary MCP JSON.
+## Entities, ownership and operations
 
-## Data and consistency
+`Channel` (workspace-scoped, direct/workspace, canonical membership), `ChannelMember`, `MailMessage` (source principal, kind, bounded body, optional `workItemId`, per-channel `channelSequence`), `MailReceipt` (recipient-specific delivery/ack timestamps) and consumer dedupe records. Match the proposed delta contracts. The mailbox must not mint identities or decide workspace membership; receive trusted Workshop-verified actor context and verify channel membership/role at every operation.
 
-`Channel {channelId,workspaceId,kind,createdAt,nextSequence}`, `ChannelMember`, `Message {messageId,channelId,channelSequence,senderPrincipalId,kind,body,taskId?,createdAt}`, `RecipientReceipt {messageId,recipientPrincipalId,deliveredAt?,ackedAt?}` and `ConsumedEvent {sourceModule,eventId}`.
+`message.send`: validate exactly one channel or recipient selector, sender scope, recipient scope, size, dedupe key; transactionally commit message, sequence, receipts and source outbox. `message.list`: authorized channel page. `message.pull`: recipient's mailbox, stable cursor. `message.ack`: only caller's receipts, idempotent. The read path never assumes an external client is connected or starts any runner.
 
-A single Mailbox-owner transaction assigns `channelSequence`, persists message/receipts and durable audit/outbox/dedupe. Total order exists **per channel**, not across channels. Direct channels are canonically resolved from workspace + sorted participant IDs to avoid accidental duplicates. Message body is **untrusted content** and must never be treated as a privileged instruction by bridge code. Do not disclose membership or content to unauthorized observers.
+Control Plane WorkItem assignment produces an **internal outbox event**. Consumer atomically saves a single `task_notice` with event dedupe; a failed Mailbox does not roll back a committed assignment. Acknowledgment proves receipt only, not processing, approval or task success. ACC is the only normalized cross-engine event projection, not a second public DomainEvent schema.
 
-Task-to-mailbox cross-module flow is at-least-once; `ConsumedEvent` prevents duplicate notifications. Delivery of a downstream message must not mutate authoritative task state. Offline agents can retrieve unread backlog on next authenticated request; bounded retention/soft-deletion policy must preserve minimum delivery guarantees and audit metadata.
+## Security/limits
 
-## Security and acceptance
+One workspace; exact channel membership and recipient check; no caller-supplied actor identity; secrets/body redaction; untrusted content for prompt/Markdown; quotas, bounded pagination and retention. Gatekeeper-mediated protected reads use its observation contract. Device push may be requested only through existing Workshop notification service after reviewed template and permission changes — no new notification token/provider infrastructure.
 
-Require `message:read`/`message:send` and membership on every read/write (including search and cursor continuation), applying `authorizeObservation` to protected reads in any Gatekeeper-facing adapter. Enforce message size, rate and fanout limits; guard against HTML/Markdown spoofing, notification storms, guessed channels, reused cursor across workspaces, receipt forgery and sender impersonation.
+## Acceptance
 
-Tests: message+receipts atomic, duplicate send idempotent, per-channel monotonic seq under concurrency, offline pull after reconnect, ack repeat, task outbox replay, workspace/channel isolation, receipt restricted to recipient, redacted logs, long retention and paging.
+T13/T14/T20/T26/T27: offline recipient connects and reads once; per-channel strict sequence; concurrent sends; ack idempotent; no cross-workspace/cursor/recipient leakage; task assignment outbox after-consumer-crash redelivery exactly one **stored** message; no implicit native/ACP run; revocation, retention and restore.

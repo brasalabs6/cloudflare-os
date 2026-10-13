@@ -63,3 +63,12 @@ packages/agent-harness-codex/
 ## Critério final
 
 Compatibilidade com motor nativo Workshop e Gatekeepers existentes; detalhes específicos de ACP/native expostos por extensões tipadas sem quebrar um front-end único. **Sem comprovação de deploy ainda.**
+
+
+## Mandatory boundary revision (audit 2026-10-13)
+
+See [Existing module authority audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md) and root SPECS §23. **No-overlap rule:** Only Codex ACP/native driver translation and per-release compatible authentication. Hub App Server code is a reference, not proof of bridge compatibility. Runtime DO/AgentDefinition authority belongs elsewhere.
+
+**Required preparatory implementation gates:** Validate codex-acp and native App Server independently; version fixtures, CAP/MCP extension schema, command/subagent event visibility, auth modes; no fallback to unverified native transport or unchecked credential injection.
+
+This is a reviewed design constraint. Neither this folder nor its plan constitutes a running module. Every completed plan step must link a source SHA, target commit, real contract/security tests and E2E proof where a Worker/Container is involved.

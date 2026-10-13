@@ -1,51 +1,47 @@
-# Multiagent MCP — Security and threat model
+# Multiagent coordination — security review after responsibility alignment
 
-**Status:** design-review checklist; no implementation has been approved or deployed. **Date:** 2026-10-13.
-**Companion:** [contracts](./MULTIAGENT_MCP_CONTRACTS_V1.md), [architecture](./MULTIAGENT_MCP_PLATFORM.md), [ACP threat boundary](./ACP_AGENT_PLATFORM.md).
+**Status:** review checklist; no new runtime deployed. See [owner audit](./MULTIAGENT_RESPONSIBILITY_AUDIT.md) and [Unified v2](./AGENT_PLATFORM_UNIFIED_V2.md).
 
-## 1. Trust boundaries
+## Authority and trust boundaries
 
-1. **MCP client → gateway:** untrusted remote network request. Validate TLS, protocol version, OAuth audience/issuer/expiry, caller, workspace membership and tool scope on **every** call. Browser session cookies and tool arguments are not bearer grants. Transport/version compatibility is verified with pinned client conformance suites rather than assumed.
-2. **Gateway → domain module:** private service-bound capability with verified actor context and exact permitted operation. Revalidate resource membership and version/lease at the owner. Service bindings are not general superuser tunnels.
-3. **Workshop → Gatekeeper:** use canonical capability grants. Observations return protected data only after `authorizeObservation`. External side effects use `submitAction` then approved `applyAction`; do not execute an action because an MCP annotation says it is idempotent or because a task changed state.
-4. **Automation → ACP runtime:** narrow Coding Agents capability + immutable harness release, budgets and explicit admission. Runtime DO owns run outcome; untrusted ACP output cannot authorize a domain mutation. Computer/terminal access requires its **separate** grant and generation-bound ticket.
-5. **Cross-domain outbox:** event producer trust is derived from service identity, validated workspace/source/entity, monotonic version and `eventId`. Accepting a message is not accepting arbitrary instructions or a delegated credential.
-6. **Agent memory/messages → prompting:** all retrieved knowledge is untrusted data; tool/system policy is never replaced by a message or memory authored by an agent.
+- **Workshop** authenticates user, workspace membership/sharing and Gatekeeper capability bindings. No agent/tool args can declare themselves owners, admins, another agent or trusted event producers.
+- **Agent Control Plane** is the sole owner of AgentDefinition, execution Task, Execution, delegation, budgets and newly proposed Goal/WorkItem business claims/review/continuity. `WorkItemClaim` is not `Execution.fencingToken`; stale claims and physical run outcome must each be reconciled.
+- **Agent Tool Gateway** exports one selected, authorized tool catalog through HTTP/MCP; `agent-tool-registry` owns metadata. Gatekeeper-authorized resource operations use their real session, `authorizeObservation` and `submitAction`/`applyAction`. MCP client connectors retain their existing BYO/portal trust policy.
+- **Overseer** holds chat/user action history, current native turns, pending callable-agent callbacks, compaction and action approvals. Do not import mailbox message bodies into trusted system prompts or reconstruct a new native-loop authority.
+- **Scheduler Gatekeeper** delivers approved hooks under its own schedule IDs/occurrence run IDs; Control Plane dedupes admission. A tool cannot install an unrestricted schedule by writing a task.
+- **ACP runtime** owns real process/run, permission request identity and generation. Task review does not mean ACP side effects were approved; Runtime `OUTCOME_UNKNOWN` cannot be silently relabeled WorkItem DONE.
+- **Context Library** owns account-private/domain-public docs, skills and protected search; new workspace facts have stricter workspace scope, explicit revision/provenance and human review. An agent never gains unrestricted Context management API.
+- **Mailbox** owns only channel messages/receipts, with sender/recipient scoped to Workshop-verified workspace. ExternalMessageGateway is a trusted service-binding for chat ingress, not a general MCP-agent identity mechanism.
+- **ACC** is single normalized event projection; source journals stay authoritative. Observability telemetry is not replay, billing or audit truth. Domain outbox events are private, deduped delivery facts only.
 
-## 2. Concrete threats and required mitigations
+## Main negative acceptance tests
 
-| Threat | Control | Acceptance evidence |
-|---|---|---|
-| Token for workspace A reads task from B | owner-side workspace+resource check, safe 403/404 | T01/T02, AC01 |
-| Agent claims to be another `agentId` | identity derived from credential/grant, no freeform impersonation | T03/T05, AC02/AC03 |
-| Stolen/replayed token; revoked agent retains access | expiry, audience binding, rotation/revoke, per-request admission, no cached privilege | T05, AC03 |
-| MCP resource/tool returns data beyond scope | tool discovery bounded; reauthorize calls, resources and pagination cursors | T02/T04/T25, AC18 |
-| Two concurrent task claimers | one transactional owner + leaseEpoch fencing | T07/T08, AC05 |
-| An old worker submits after reassignment | epoch/secret digest/expiry/actor compare on every write | T08/T12, AC05/AC07 |
-| Message or outbox delivered twice | unique idempotency/dedupe, inbox unique event IDs, no retry of unknown external effects | T20/T26/T27, AC14 |
-| Reviewer approves own result; high-risk task bypass | distinct reviewer, risk policy, human approval for sensitive work | T11b/T16/T19, AC07/AC13 |
-| ACP tool permission treated as Task approval | distinct identities, namespaces and policies; no shortcut | ACP security E2E |
-| Subagent privilege escalation | effective scope intersection, depth/fanout/budget limits | T28, P03 |
-| SSRF via MCP remote URL / resource URI | no caller-controlled upstream on server; shared endpoint SSRF checks for any client egress, no unsafe redirects | endpoint abuse suite |
-| Secrets in events, backup, errors or tool output | sanitized structured audit, log sampling review, encrypted/trusted secret stores, bounded exports | T21b/T22, AC15/AC16 |
-| Prompt injection in memory/message | render/label untrusted data; never grant tools/scopes from text | T29, P08 |
-| Operator assumes 'online' or 'delivered' implies work | explicit heartbeat/receipt/run authority | T23/T30, AC17 |
-| Long-running runaway loops | policy admission, concurrency/iteration/cost caps, human stop and runtime kill | automation failure injection |
+| Scenario | Required defense / evidence |
+|---|---|
+| A token for workspace A requests goal, task, mailbox, learning, resource or cursor in B | owner-side workspace and observer checks deny before content disclosure |
+| MCP client sets `principalId`/`agentId`/`scopes` | derive from verified identity, reject forgery and stale/revoked tickets |
+| Concurrent WorkItem claims/reassignments | same owner transaction, CAS revision, lease epoch+secret digest+expiration |
+| Claim allows arbitrary execution | explicit Control Plane admission/grant intersection; never infer ACP permission from WorkItem claim |
+| Agent reviews its own deliverable or a high-risk change | distinct reviewer; human-required risk policy |
+| DAG with cycle/foreign-workspace edge | atomic local graph validation; no partial write |
+| Task assignment persisted but Mailbox crashes | producer outbox remains, at-least-once retry with consumer event dedupe and eventual delivery status |
+| Replay after uncertain external effect | OUTCOME_UNKNOWN reconciliation; never blind duplicate execution |
+| Mail body or memory claims "ignore policy" | label/escape untrusted data; no system-role elevation or auto-review |
+| Context private data copied to workspace memory | explicit source authorization, no widening sharing scope; check observer exclusions |
+| Agent calls native tool after revoke | fresh capability and policy checks at apply time, not cached catalog |
+| Agent builds uncontrolled loops/subagents | budgets/step/depth/fanout/stop, checked at current Control Plane admission |
+| Unauthorized terminal/file read | separately granted Computer capability with generation ticket, path/size boundaries |
+| Leaked API key in diagnostic/event/notification | sanitize/truncate payloads, fixed notification templates and log review |
+| Unknown MCP client protocol/transport | explicit version checks + pinned conformance fixtures; no silently weaker fallback |
 
-## 3. Authorization matrix
+## Approval namespace isolation
 
-| Role | Typical allowed operations | Explicitly denied by default |
-|---|---|---|
-| Human owner/admin | workspace policy/agent registration, domain CRUD and review within verified role | bypass of provider/ACP permission boundary |
-| Human operator | create/assign/inspect tasks and messages, delegated low-risk reviews | grant/credential issuance without admin rights |
-| Human viewer | authorized read of redacted projections | all writes, unredacted secrets |
-| Executor agent | whoami, task reads/claims on assigned work, progress/result, own inbox, scoped continuity | workspace administration, third-party credential access, own review |
-| Supervisor agent | executor rights plus scoped goal/task planning and delegation | escalating child scopes, arbitrary agent execution |
-| Reviewer agent | explicitly delegated `task:review` for low-risk tasks it did not perform | sensitive review, own tasks |
-| Internal worker | only one service-bound operation profile | human login impersonation or unrestricted public endpoints |
+1. **WorkItemReview:** business acceptance of evidence/DoD in Control Plane; never applies a third-party action.
+2. **Workshop/Gatekeeper ApprovalQueue:** approves real external resource action via `submitAction`/`applyAction`; observation authorizer protects reads and sharing.
+3. **ACP runtime permission request:** approves specific sandbox process tool call bound to session/run/generation/tool call.
 
-This is a *template*; effective scopes are the intersection of Workshop membership, user grants, credential grants, per-resource policy and any parent delegation. Protected reads need observation authorization when Gatekeeper-mediated; role-based UI hiding is not sufficient.
+An arbitrary MCP `approval.request` must not create an independent fourth privileged approval queue. It may project an existing resource-specific request only if authenticated and explicitly supported.
 
-## 4. Acceptance gates
+## Mandatory gates
 
-Before any public MCP server deployment: threat-model review, OAuth/client-version conformance, cross-workspace negative suite for **all** entities, denial/expiry/revoke race tests, audit redaction/export/restore drill, quotas/size-bomb tests, and independent approval-flow tests. Before managed runtime enablement: ACP staging E2E for each harness, egress/secret review, generation fencing, checkpoint restore proof and rollback drill. Staging evidence and production evidence are tracked separately.
+Before public Gateway: auth OAuth/audience/expiry/revoke/redirect tests, permission matrix per tool and cursor, isolation, rate/size limits, catalog versioning and honest result/status semantics. Before Mailbox or Memory storage: per-workspace ownership tests, revision/idempotency/dedupe, backups/restore and at-least-once failure injection. Before managed runner: real native and CLI harness E2E, supervised stop/recovery, secrets/egress and budget enforcement. Never call this docs-only PR implemented.

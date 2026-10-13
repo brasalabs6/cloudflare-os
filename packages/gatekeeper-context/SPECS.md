@@ -141,3 +141,14 @@ flowchart TD
 ```
 
 Collection/skill Git sync MUST preserve existing content when import/update fails, never cross sharing domains or delete public collections on private-account revocation. Tests MUST include upload/frontmatter parsing, rename preserving unrelated YAML, move/cycle guards, tree deletion, Git-backed synchronization, catalog cap/truncation, role/domain access and observer refusal. See src/agent-skill.ts and app/skills/.
+
+
+## Cross-module agent-platform boundary audit (2026-10-13)
+
+This package is a preexisting authority/consumer of agent-platform behavior. Refer to the [source-grounded no-overlap audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md) and root SPECS §23 before accepting any overlapping implementation. **Specific requirement:** AgentDefinition.instructionsRef and context/skill access MUST point to existing Context Library collection and use owner/workspace grants; do not implement a second global context/skills database as an agent platform feature.
+
+Any downstream addition needs existing consumer regression tests plus scoped-auth/idempotency/race tests; a documentation reference is not proof of runtime implementation.
+
+## Workspace structured-memory reuse gate — design only
+
+The PDR needs workspace-scoped structured facts, provenance, fact revision and human-reviewed learning, which the present Context collections (account-private or sharing-domain public) do not directly model. Context **already owns** documents, skills, search and its approved management app; those operations must not be rebuilt in a new fact service. Before approving `agent-memory` as an independent storage package, assess a scoped Context extension that preserves sharingDomain/account lifecycle, observer verification and no ambient agent writes. If safe, keep WorkspaceFact/learning storage within Context and delete the provisional new package spec. If not safe, restrict any new module to workspace facts/learning and use Context only through its authorized read/management capabilities. [Decision-first plan](../agent-memory/plan.md).

@@ -75,3 +75,12 @@ Loop strategies with fake clock, budget exhaustion, spinning prevention, crash-b
 
 **Done only when** every checked item has code and test links, plus an actual release/deploy reference if this package produces a Worker. No long-running autonomous loop or public MCP API is "done" based solely on mocks.
 
+
+
+## Source audit correction / mandatory no-overlap gate — 2026-10-13
+
+**Governing evidence:** [32 existing module audit](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS.md §23, and current executable source. **Boundary:** This is a bounded *outer task continuation strategy library*, not a second pi-agent-core inner tool loop and not a cron/scheduler Worker. Existing runAgentLoopContinue stays in workshop-backend; existing ScheduleDriver owns recurrence and its retry/timezone rules.
+
+**Implementation ordering:** Before implementation: characterize native pi-tool loop and Scheduler; define maxStepsPerWake/maxIterations/termination budget; implement only pure LoopDecision and Task DO alarm continuation with fake-clock tests; forbid local while(true) infinite workers.
+
+**Blockers:** no executable implementation until existing behavior is characterized; module files in this directory are currently planning documents only. For every feature, record source/target authority, typed schema, security negative test, crash/idempotency case and relevant integration evidence. If a proposed API duplicates current authority, revise the proposal first instead of implementing a duplicate.

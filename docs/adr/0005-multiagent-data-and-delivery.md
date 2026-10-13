@@ -1,21 +1,15 @@
-# ADR 0005 — Independent domain authorities with durable outbox
+# ADR 0005 — Owner-local transactions, canonical ACC projection, bounded mailbox
 
-**Status:** Proposed for review; not implemented. **Date:** 2026-10-13.
+**Status:** Proposed for review; implementation pending. **Date:** 2026-10-13. **Supersedes:** original PR #4 draft which introduced a parallel domain audit/event authority.
 
 ## Context
 
-Tasks need transactional claims/leases and cycle-safe dependencies. Messaging needs durable per-channel ordering/recipient receipts; memory and continuity have different revision lifecycles. If independent modules use distinct Durable Objects, a cross-module mutation cannot assume a shared ACID transaction. A single monolithic coordination DO would simplify atomicity but couple throughput, deploys and schemas.
+Unified v2 already defines ACC AgentEventV1, Control Plane Task/Execution, Overseer chat history, runtime event journals, Scheduler recurrence and Gatekeeper action approvals. A new common DomainEventV1 / Audit DO would compete with those state sources. WorkItem assignment to an offline agent must still durably notify without cross-Durable-Object transactions.
 
 ## Decision
 
-Use owning SQLite-backed Durable Objects per workspace and bounded domain: keep tasks + goals + DAG + lease ledger in one task authority; keep message channels, messages and receipts in one mailbox authority per consistent shard; memory/learning and continuity are separate logical owners. An owner transaction commits canonical state, idempotency record, audit event and outbox record together. Deliver to other modules at least once with `eventId` dedupe, retry/backoff, reconciliation, dead-letter visibility and no externally advertised exactly-once guarantee. Replays never silently redo potentially ambiguous side effects. Eventual cross-domain projections may lag their authoritative source.
-
-An implementation MAY co-deploy logical modules where this reduces operational overhead; shared Worker deployment is not permission for direct cross-module storage writes. The ACP SessionRuntime DO remains separate and sole run-state authority.
+Keep canonical state in its existing owner: Control Plane WorkItem/Goal and related outbox; Mailbox messages and receipts (new, minimal authority); workspace structured Memory/Learning if a Context reuse review justifies it. Each owner atomically commits state, idempotency and an **internal outbox**, and consumers dedupe `(source,eventId)` in their local transaction. Publish validated/redacted source events to **existing ACC projection**. No global exactly-once claim or audit master Worker. The existing Workshop notification service remains the delivery mechanism for supported device templates. Keep Task/WorkItem vs ACP Run vs Gatekeeper approval vs Overseer chat history as different data authorities.
 
 ## Consequences
 
-- Task assignment and mailbox notification can temporarily disagree; expose pending delivery status.
-- Cross-workspace listing is separately authorized fan-out or a non-authoritative projection.
-- Reconciliation, dedupe retention, event schema migration and crash injection tests are required gates.
-- Checkpoint, memory and continuity are distinct: filesystem restore is not ACP process restore, and a continuity note is never task/run truth.
-- See `../architecture/MULTIAGENT_MCP_CONTRACTS_V1.md` for state and event invariants.
+WorkItem assignment may be committed while mailbox delivery is pending; client shows both. A continuity summary is a Control Plane projection over source event cursors and is never an executable task/run database. Outbox retry/backoff/dead letters, retention, replay and crash injection are required. Cross-workspace ACL and revocation apply again at the consumer/projection boundary. See [delta contracts](../architecture/MULTIAGENT_MCP_CONTRACTS_V1.md).

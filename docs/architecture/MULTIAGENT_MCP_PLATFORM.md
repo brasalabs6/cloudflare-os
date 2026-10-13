@@ -1,101 +1,100 @@
-# Multiagent domain platform — Cloudflare OS
+# Multiagent MCP — integration architecture (Unified Agent Platform v2 extension)
 
-**Status:** proposed target architecture; not implemented. **Date:** 2026-10-13.
-**Inputs:** the supplied multiagent MCP MVP PDR and technical specs (F01–F16, AC01–AC18), adapted to the Cloudflare OS kernel. **Authority:** root `SPECS.md` > package `SPECS.md` > executable contracts. This document is an integration overview; `MULTIAGENT_MCP_CONTRACTS_V1.md` defines the proposed domain wire/data contracts.
+**Status:** revised design proposal; implementation pending. **Date:** 2026-10-13.
+**Review baseline:** `main@9ad57f68ca1eb6f2e2c2ee313c4ff95d0d503a25`.
+**Normative upstream:** [Unified Agent Platform v2](./AGENT_PLATFORM_UNIFIED_V2.md), [ACC agent-protocol](../../packages/agent-protocol/SPECS.md), [ACP execution contracts](./ACP_CONTRACTS_V1.md) and root [SPECS.md](../../SPECS.md).
+**Evidence:** [responsibility and gap audit](./MULTIAGENT_RESPONSIBILITY_AUDIT.md); [PDR mapping and plan](./MULTIAGENT_MCP_IMPLEMENTATION_PLAN.md).
 
-## 1. Decision
+## 1. Corrected architecture decision
 
-Implement domain-oriented, workspace-scoped multiagent coordination as independent Cloudflare OS modules with a shared domain contract and an outbound MCP **server** adapter. The Workshop kernel remains the authority for human identity, membership, capability grants, approvals and workspace lifecycle. Do not create a parallel Next.js identity system, PostgreSQL authority or second orchestration kernel.
+Extend **the already-specified Unified Agent Platform v2** to satisfy the attached multiagent MCP coordination PDR. Do NOT add alternative Agent Directory, Agent Goals/Tasks, Automation, Audit or MCP Domain Gateway packages. Their responsibilities already belong to `agent-control-plane`, `agent-loop`, `agent-protocol`, `agent-tool-registry`, `agent-tool-gateway` and existing Workshop/Gatekeeper/observability code.
 
-- **MCP** is an agent-facing interface for discovering/calling domain tools and reading resources. A connected external MCP client is not necessarily executing or available for push.
-- **Cap'n Web RPC** is the existing Workshop/Code Mode integration; first-party callers use the **same** domain services and policy checks as MCP, not separate business logic.
-- **ACP** controls managed CLI harness process sessions. The existing `ACP_AGENT_PLATFORM.md` and `ACP_CONTRACTS_V1.md` own session/run state and event semantics; domain task IDs never replace `agentRunId`.
-- **Gatekeepers** mediate external data/resources, observations and actions. Generic `gatekeeper-mcp` and `gatekeeper-mcp-portal` are MCP *clients*, not the new server endpoint. A new domain gateway MUST NOT borrow their account credential stores or reinterpret remote annotations.
-- **Automation** is logical, bounded and restartable. Task assignment/message receipt cannot itself wake an external client. Managed wakeups require the independently specified ACP runtime; existing `gatekeeper-scheduler` supplies approved hooks/triggers.
+The first PR draft was authored against an earlier inventory and proposed overlapping package names; those proposals are withdrawn. Existing new v2 components are **specifications only**, not evidence of deployed agent coordination. Scope additions must land in their existing package plans, implementation, schemas and tests.
 
-## 2. Component diagram
+Only two bounded **potential** new domain capabilities remain:
+- `agent-mailbox` — workspace member-to-member durable channels/inbox/receipts, not the existing external-chat gateway or Overseer conversation.
+- `agent-memory` — workspace-scoped, structured factual assertions/learning review, not the Context Library document/skill repository; reevaluate co-location with `gatekeeper-context` before authorizing a second persistent store.
+
+Goal/Project/**WorkItem** DAG/review/claim and Continuity Ledger are **extensions inside the control plane**, using ACC event projections. They must not create a second generic `Task`/`Execution` state machine. UI uses the existing Workshop `features/agent-sessions` area.
+
+## 2. End-to-end topology
 
 ```mermaid
 flowchart TB
-  Browser["Workshop frontend"] --> Kernel["Workshop backend / Overseer"]
-  External["External MCP clients"] --> Gateway["Multiagent MCP server gateway"]
-  Kernel --> Domain["Authenticated domain RPC"]
-  Gateway --> Domain
-  Domain --> Directory["Agent directory"]
-  Domain --> Task["Goals / tasks / DAG / leases"]
-  Domain --> Mail["Durable mailbox"]
-  Domain --> Memory["Memory / learning"]
-  Domain --> Ledger["Continuity ledger"]
-  Domain --> Audit["Audit and outbox"]
-  Domain --> Autonomy["Automation controller"]
-  Autonomy --> Scheduler["Existing approved Scheduler hooks"]
-  Autonomy --> Coding["Existing specified Coding Agents Gatekeeper"]
-  Coding --> Runtime["ACP Agent Runtime"]
-  Runtime --> Containers["Isolated Containers + ACP harnesses"]
+  UI[Existing Workshop UI / Agent Sessions] --> W[Workshop identity + Overseer]
+  EXT[Authorized external MCP clients] --> GW[Existing specified Agent Tool Gateway]
+  W --> CP[Existing specified Agent Control Plane]
+  GW --> TR[Existing specified Agent Tool Registry]
+  TR --> CP
+  TR --> MB[New bounded Mailbox capability]
+  TR --> MEM[New bounded Structured Memory capability]
+  CP --> WB[Goal / WorkItem DAG extension]
+  CP --> CONT[Continuity projection from ACC]
+  CP --> L[Existing specified Agent Loop]
+  L --> N[Native pi-agent-core / Overseer]
+  L --> RT[ACP Runtime / Container]
+  HOOK[Existing Gatekeeper Scheduler] --> CP
+  W --> GK[Existing Gatekeeper approvals/capabilities]
+  GK --> TR
+  CTX[Existing Context document/skill library] --> MEM
+  CP --> ACC[Existing specified Agent Protocol / ACC]
+  MB --> ACC
+  MEM --> ACC
+  RT --> ACC
+  N --> ACC
+  ACC --> UI
+  OBS[Existing Observability] -.redacted telemetry.-> ACC
 ```
 
-## 3. Ownership and boundaries
+**Important:** this diagram shows intended wiring; runtime components labelled specified are not yet deployed. Gatekeeper access is capability-scoped, not a blanket one-hop grant from an HTTP token. The Context↔Memory link is authorized read/optional human-reviewed promotion, not raw cross-DO writes. Observability is diagnostic and does not inject canonical state into ACC.
 
-| Module (proposed package) | Owns / authority | Does not own |
-|---|---|---|
-| `agent-directory` | Stable agent definitions, workspace grants, instance/presence projections | Workshop user accounts, ACP sessions, raw tokens |
-| `agent-goals-tasks` | Goals, projects, DAG, task lifecycle, claims, evidence/reviews, task outbox | Running harness processes |
-| `agent-mailbox` | Workspace channels, per-channel ordered messages, recipient receipts | Starting disconnected external agents |
-| `agent-memory` | Versioned, sourced workspace memories and learning proposals/reviews | Context Gatekeeper's own collections or system instructions |
-| `agent-continuity` | Versioned agent/workspace continuity projection and source cursor | Authoritative task status or ACP checkpoint |
-| `agent-audit` | Redacted domain-event index, per-source outbox delivery/reconciliation | ACP SessionRuntime event journal |
-| `agent-automation` | Approved wake intents, autonomy policies, scheduling integration, budget/fanout guards | Auth, ACP transport, Container/process lifecycle |
-| `mcp-domain-gateway` | OAuth/protocol ingress, tool/resource catalog, domain routing and result projection | Domain persistence or granting authority |
-| Workshop frontend feature | Dashboard, DAG, inbox, review, continuity, automation | Second API or authorization system |
+## 3. Exact owner responsibilities
 
-`agent-goals-tasks` MUST keep DAG mutation + claims in a single transactional authority (a workspace-keyed Tasks Durable Object is preferred). `agent-mailbox` and memory-related domains may have separate DOs/Workers. Logical module separation does not automatically require separate deployable Workers on day one; Worker split decisions must respect the repository's Wrangler/service-binding conventions.
+| Owning module | Responsibility / no-duplicate rule |
+|---|---|
+| Workshop/User DO/Overseer | Human identities, workspace membership/sharing, chat content, native turns, compaction, callable-agent delivery, Gatekeeper actions and existing notifications |
+| agent-control-plane (specified) | AgentDefinition, agent/task ownership, run admission, execution `Task` + `Execution`, triggers, subagents and budgets; **new** Goal/WorkItem DAG and continuity projection in this owner |
+| agent-loop (specified) | bounded turn/continuation strategies, not recurring calendar schedule |
+| agent-harness-native (specified adapter) | maps native pi-agent-core behavior to ACC; never copies chat state |
+| agent-runtime / ACP (specified) | CLI session/process/sandbox, generation and run journal; WorkItem review not a run state |
+| agent-protocol (specified) | ACC AgentEvent v1 / EngineDriver / projection schema; no second domain event protocol |
+| agent-tool-registry (specified) | one ToolManifest and permission-aware discovery/projection catalog |
+| agent-tool-gateway (specified) | one authenticated HTTP + MCP **server** export; existing MCP BYO/portal Gatekeepers remain import clients |
+| gatekeeper-scheduler (implemented) | approved one-shot/calendar/interval triggers and unique occurrence run IDs |
+| gatekeeper-context (implemented) | private/domain-shared document+skill collections and search, authorized agent reads |
+| agent-mailbox (NEW capability) | ordered workspace agent/human message channels, offline inbox and ack; no sending arbitrary prompts into Overseer |
+| agent-memory (NEW candidate) | workspace factual revisions and reviewed learning proposals, with no duplicate document/skill store |
+| Observability (implemented) | metrics, logs and diagnostics, never domain event truth |
+| workshop-frontend/features/agent-sessions (specified) | unified UI; expand with Task Workboard, inbox, learning, continuity and event views |
 
-## 4. Workspace and identity
+A "module" is an independent contract/policy boundary, not necessarily a separate Worker. The PDR explicitly avoids microservices for every P0 feature. Add deployment units only with a measured reason; package name and `SPECS.md` are not deployment proof.
 
-A `workspaceId` is issued and authorized by Workshop. A stable `agentId` describes a managed or external actor; an `agentInstanceId` binds it to a workspace/execution mode. An `agentSessionId` and `agentRunId` exist only for managed ACP runs. A `taskId` and `taskRunId` describe business work and correlate with (but do not alias) ACP runs. A `principalId` is derived from authenticated Workshop/API context, never from request-supplied actor fields.
+## 4. Task nomenclature must be collision-free
 
-An agent may have access to several workspaces only via explicit grants. Every request selects one; listing across workspaces requires aggregation of separately authorized pages. No IDs, URLs, generated MCP resources or event payloads are bearer authority.
+Unified v2 `Task` = **execution instruction managed by Agent Control Plane**, with `Execution`, run/loop state, engine outcome, budget and unknown-outcome recovery.
 
-## 5. Data, messaging and consistency
+PDR "task" = **human/agent deliverable** with goal, dependencies, due/priority, DoD, assignment, exclusive work claim and review. Name the persisted record `WorkItem`, with optional `WorkItemClaim`, `WorkItemDependency` and `WorkItemReview`. One WorkItem may correlate to zero or more execution Tasks. The MCP PDR public tool names `task.*` are **aliases to WorkItem operations** in `agent-tool-registry`, never direct unrestricted access to execution `Task`. Keep `workItemId` vs `taskId` vs `agentRunId` explicit and independent.
 
-Canonical mutable domain records live in SQLite-backed Durable Object storage, not a shared cross-DO transaction. Every local mutation: validate principal/grant/quota + expected version, verify idempotency key/hash, write state + redacted audit event + outbox message in **one local transaction**, return committed state. A receiving module consumes events with `eventId` deduplication, at-least-once delivery, retry/backoff and dead-letter/repair visibility. The UI distinguishes `task assigned` from `inbox notification delivered`. The domain event stream is separate from ACP `AgentEvent`; links use `correlationId`, `agentSessionId` and `agentRunId` only after validation.
+Delivery receipt, task review, externally effective provider action approval and ACP tool permission all have distinct semantics. No completion status in one domain may forge completion in another.
 
-R2 is suitable for bounded, checksummed large artifacts/export and ACP checkpoints; it is not the live domain database. Cross-DO search/projections are eventual and must never override owner records.
+## 5. Events, state and mail delivery
 
-## 6. Permission and approval invariants
+Canonical *presentation* is ACC `AgentEventV1`. The owner of each state stores its own idempotency, revisions, journal/outbox records transactionally. Local outbox rows are an internal transport mechanism, not a competing system-wide `DomainEventV1`. The projection consumes redacted facts with source id/cursor/vector, dedupes and exposes an authorized replay stream. Observability metrics remain separate from business history.
 
-- Authenticate and authorize each request independently at the ingress and privileged operation boundary; deny absent grants.
-- Agents can never grant themselves wider permissions, mint credentials, decide sensitive human approvals or review their own task completion.
-- Gatekeeper observations MUST use `authorizeObservation` and externally effective actions MUST use `submitAction`/`applyAction`; never describe a pending simulated action as completed.
-- ACP tool permission requests are a distinct approval namespace bound to session/run/generation/tool call. Task review is a third, explicitly separate domain decision.
-- Brokered identity for a managed agent is a constrained per-run/session principal whose effective scopes are the intersection of account/workspace grant, credential/connection scopes, policy, and delegated parent scopes.
-- Include secret redaction, SSRF/redirect protections for any remote MCP egress, cross-workspace denial tests and bounded input/output/event sizes.
+Example: Control Plane atomically commits WorkItem assignment and outbox row; Mailbox later persists one notice with consumer `eventId` dedupe and receipt rows; notification delivery uses existing Workshop notification service only via approved typed template/API. Assignment success does not mean delivered, read, or executed. Cross-DO **exactly once** is never assumed.
 
-## 7. Runtime and scheduling
+## 6. Runtime, external agents and 24/7
 
-MVP coordination works for already-running external MCP clients: `task.next`/`message.pull` are polling reads, not wake guarantees. When the ACP runtime from the existing specs is deployed, `agent-automation` MAY create a managed run using a private, authorized Coding Agents capability. A wake intent records source, idempotency key, budget and cause before dispatch. Runtime `OUTCOME_UNKNOWN` must be reconciled; automatic replay of ambiguous side effects is forbidden. A 24/7 agent means persistently eligible for approved wakeups, not a permanently running Container. Subagents inherit intersected grants and budget/depth/fanout limits.
+An external MCP client can poll `task.next`/`message.pull`; MCP does not start its underlying process. The existing Agent Control Plane + Agent Loop, when implemented, will schedule bounded native/ACP runs, with Scheduler's approved hook for calendar time. No second autonomous-loop controller or arbitrary `agent.spawn` MCP tool is added by this proposal.
 
-## 8. Delivery topology
+Long-running agents are persistently eligible for approved triggers and resumable executions, not infinite requests/containers. Subagents use the existing v2 lineage, budget, max-depth and scope-intersection rules; platform children and observed in-harness children are not conflated.
 
-Proposed packages:
+## 7. Implementation and governance
 
-- `packages/mcp-domain-gateway/SPECS.md`
-- `packages/agent-directory/SPECS.md`
-- `packages/agent-goals-tasks/SPECS.md`
-- `packages/agent-mailbox/SPECS.md`
-- `packages/agent-memory/SPECS.md`
-- `packages/agent-continuity/SPECS.md`
-- `packages/agent-audit/SPECS.md`
-- `packages/agent-automation/SPECS.md`
-- `packages/workshop-frontend/src/features/multiagent/SPECS.md`
+1. Review [responsibility audit](./MULTIAGENT_RESPONSIBILITY_AUDIT.md), [domain delta contracts](./MULTIAGENT_MCP_CONTRACTS_V1.md) and [security](./MULTIAGENT_MCP_SECURITY.md).
+2. Implement existing v2 owners and ABI first: ACC, Control Plane, Tool Registry/Gateway, native/harness adapters. Preserve installed Workshop behavior via regressions.
+3. Extend Control Plane workboard + continuity. Introduce Mailbox only for verified multiagent inbox gap. Introduce scoped facts/learning only after a Context capability/reuse proof.
+4. Integrate into current Agent Sessions UI; avoid a new primary app.
+5. Verify original PDR F01–F16/AC01–AC18 and staging negative security/DO failure tests before claiming success.
 
-Production deployment and package creation remain implementation work. Do not add `wrangler.jsonc` to a package merely to make it look independently deployable: deployable registration is explicit and reviewed.
-
-## 9. Canonical related docs
-
-- [Multiagent contracts v1](./MULTIAGENT_MCP_CONTRACTS_V1.md)
-- [Security and threat model](./MULTIAGENT_MCP_SECURITY.md)
-- [Implementation/acceptance matrix](./MULTIAGENT_MCP_IMPLEMENTATION_PLAN.md)
-- [ACP platform](./ACP_AGENT_PLATFORM.md), [ACP contracts](./ACP_CONTRACTS_V1.md), [ACP migration matrix](./ACP_MIGRATION_MATRIX.md)
-- [ADR 0004](../adr/0004-multiagent-domain-and-mcp-boundary.md), [ADR 0005](../adr/0005-multiagent-data-and-delivery.md)
-- [Root architecture](../../SPECS.md), [Gatekeeper authoring](../../.agents/skills/write-gatekeeper/SKILL.md)
+**This PR only changes docs/contracts.** No deployed runtime, migrations, tools endpoint, or acceptance test success is implied.

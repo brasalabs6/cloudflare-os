@@ -110,3 +110,12 @@ Extend beyond coding sessions to AgentDefinitions, Tasks, trigger inspection and
 ### Acceptance
 
 A change is done only with strict schemas, migrated/verified data shapes, tests for idempotent admission, partial protocol messages, replay and crash/reconciliation, deny-by-default resource grants, source provenance and staging E2E for deployed services. Verify that core Workshop Code Mode and Gatekeeper simulation tests remain green.
+
+
+## Mandatory existing-module boundary / implementation gate (2026-10-13)
+
+Audit: [EXISTING_MODULE_BOUNDARIES_AUDIT.md](../../docs/architecture/EXISTING_MODULE_BOUNDARIES_AUDIT.md), governing root SPECS §23. **Owner constraint:** A NEW scoped capability for persistent AgentDefinitions/Tasks, not a replacement for Overseer newAgentSpawnerGatekeeper or native AgentSpawnerBinding.spawn/spawnCallable. Gatekeeper actions are staged/simulated and only applied by Workshop ApprovalQueue, not immediate Task mutation. ACP tool approval is separate.
+
+**Before beginning tasks in this package:** Before ANY implementation, review proposed types.d.ts against Cap'n Web and .agents/skills/write-gatekeeper/SKILL.md; characterize native AgentSpawner before mapping optional task IDs; prove observation authorizeObservation, delegated child task grant intersections and no cross-workspace access.
+
+The directory is DOC_ONLY until package.json, actual source, schema tests and correct Worker configuration are added. No new runtime is implemented by the spec revision. Every relevant plan item requires source→target evidence, typed contract checks, approval/identity threat tests and real worker E2E when applicable.

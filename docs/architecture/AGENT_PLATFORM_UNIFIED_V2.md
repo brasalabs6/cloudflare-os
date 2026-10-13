@@ -1,5 +1,7 @@
 # Unified Agent Platform v2 — Specification
 
+> **Architecture-correction note, 2026-10-13:** The [existing module ownership audit](./EXISTING_MODULE_BOUNDARIES_AUDIT.md), root SPECS.md §23, and actual Workshop/Gatekeeper code take precedence over speculative target ownership in this earlier v2 design. The 15 new package directories are documentation-only; module adoption is subject to no-overlap gates.
+
 **Status:** TARGET DESIGN / IMPLEMENTATION PENDING. **Date:** 2026-10-13. **Normative dependency:** [ACP_CONTRACTS_V1](./ACP_CONTRACTS_V1.md) for legacy ACP-run envelopes; this document governs the extended agent/task/engine/tool abstraction. Where the two disagree on agent/task concepts, migrate the old contract with versioned compatibility, never silently reinterpret stored v1 rows.
 
 ## 1. Why alignment is required (verified repository behavior)
@@ -278,3 +280,10 @@ Every implementation plan must include source commit/path, target path, schema m
 5. Runtime budget accounting and continuous process/container limits.
 6. Release names and router bindings must be reflected in generated deployment config and release manifest before claiming deploy readiness.
 
+## 11. Multiagent MCP PDR alignment — responsibility audit
+
+**Review addendum (2026-10-13), design-only:** [Code/source ownership inventory](./MULTIAGENT_RESPONSIBILITY_AUDIT.md), [coordination delta contracts](./MULTIAGENT_MCP_CONTRACTS_V1.md) and [implementation gates](./MULTIAGENT_MCP_IMPLEMENTATION_PLAN.md) supersede any separate proposal for `agent-directory`, `agent-goals-tasks`, `agent-automation`, `agent-audit`, `mcp-domain-gateway` or a parallel primary Agent UI.
+
+PDR business deliverables are `WorkItem` + Goal/DAG/review, **distinct** from this spec's Control Plane engine execution `Task`/`Execution`. Workboard records, scheduling admission correlation and continuity projection belong in `agent-control-plane`, not another Agent/Task authority. Public `task.*` MCP methods are versioned Tool Registry **WorkItem aliases**, not implicit v2 execution Task access. ACC remains the cross-engine event projection; private outbox facts are not a second event language. Mailbox channels/offline receipts are a bounded gap distinct from Overseer chat/callable callbacks; structured workspace facts are conditional on a Context reuse/security gate. Existing tool gateway, Scheduler, Observability, notification service and Agent Sessions UI are reused.
+
+No runtime status claims change because of this addendum. Every future implementation must preserve current native pi agent-core/Overseer behavior and the existing ACP, Gatekeeper and Scheduler compatibility tests.
